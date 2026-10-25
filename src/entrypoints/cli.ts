@@ -11,12 +11,12 @@ import fs from "fs";
 import { getOctokit } from "@actions/github";
 import { Command } from "commander";
 
-import { Backlog } from "../backlog";
-import { CommandName, COMMANDS } from "../commands";
-import { CONFIG_FILE, loadConfig } from "../config";
-import { GitHubApi, OctokitLike } from "../github";
-import { readItemFolder, readLineList, runImport } from "../importer";
-import { runMcpServer } from "../mcp";
+import { Backlog } from "../backlog.js";
+import { CommandName, COMMANDS } from "../commands.js";
+import { CONFIG_FILE, loadConfig } from "../config.js";
+import { GitHubApi, OctokitLike } from "../github.js";
+import { readItemFolder, readLineList, runImport } from "../importer.js";
+import { runMcpServer } from "../mcp.js";
 
 type Globals = { config: string; repo?: string; json?: boolean };
 

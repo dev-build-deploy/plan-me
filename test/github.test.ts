@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { appendLine, GitHubApi, OctokitLike, parseBodyLinks } from "../src/github";
+import { appendLine, GitHubApi, OctokitLike, parseBodyLinks } from "../src/github.js";
 
 type Call = { query: string; vars?: Record<string, unknown> };
 

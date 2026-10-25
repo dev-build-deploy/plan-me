@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { findReferences, onIssueClosed, onPullRequest, PullRequestInfo, sweep } from "../src/automation";
+import { findReferences, onIssueClosed, onPullRequest, PullRequestInfo, sweep } from "../src/automation.js";
 
-import { CONFIG, setup } from "./fake";
+import { CONFIG, setup } from "./fake.js";
 
 const pr = (action: string, body: string, branch = "main", merged = false): PullRequestInfo => ({
   number: 99,

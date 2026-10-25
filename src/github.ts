@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { Features, FieldSpec, Link, NewIssue, PlanApi, RawIssue } from "./api";
-import { BoardConfig, LabelConfig } from "./config";
+import { Features, FieldSpec, Link, NewIssue, PlanApi, RawIssue } from "./api.js";
+import { BoardConfig, LabelConfig } from "./config.js";
 
 /** The two Octokit calls plan-me uses (satisfied by `@actions/github`'s getOctokit and by test mocks). */
 export interface OctokitLike {

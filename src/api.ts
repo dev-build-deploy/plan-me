@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { BoardConfig, LabelConfig } from "./config";
+import { BoardConfig, LabelConfig } from "./config.js";
 
 /** A link to another issue with its state (undefined: unknown, e.g. read from a fallback body line). */
 export interface Link {
