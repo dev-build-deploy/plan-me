@@ -53,7 +53,8 @@ function define<S extends z.ZodRawShape>(spec: CommandSpec<S>): CommandSpec<S> {
 /** The commands exposed as MCP tools (and used by the CLI). */
 export const COMMANDS = {
   next: define({
-    description: "The next item to pick up: open and unblocked, P1 before P2 before P3; in-progress and needs-decision first",
+    description:
+      "The next item to pick up: open and unblocked, P1 before P2 before P3; in-progress and needs-decision first",
     input: { ...filters, limit: z.number().int().positive().optional().describe("How many (default 1)") },
     mutates: false,
     run: async (b, a) => itemsResult(b, await b.next(a as Filters, a.limit ?? 1)),
