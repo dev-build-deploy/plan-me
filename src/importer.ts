@@ -94,7 +94,10 @@ function mapComponent(config: Config, areas: string[], fallback?: string): strin
 
 /** A short title from free text: its first clause, cut at a word boundary. */
 export function shortTitle(text: string): string {
-  const first = text.split(/(?<=\S)(?:\. |: )/)[0].trim().replace(/\.$/, "");
+  const first = text
+    .split(/(?<=\S)(?:\. |: )/)[0]
+    .trim()
+    .replace(/\.$/, "");
   if (first.length <= TITLE_MAX) return first;
   return first.slice(0, TITLE_MAX).replace(/\s+\S*$/, "") + "…";
 }
@@ -105,7 +108,10 @@ export function shortTitle(text: string): string {
  */
 export function readItemFolder(config: Config, dir: string, options: ImportOptions = {}): ImportRecord[] {
   const records: ImportRecord[] = [];
-  for (const file of fs.readdirSync(dir).filter(f => f.endsWith(".md")).sort()) {
+  for (const file of fs
+    .readdirSync(dir)
+    .filter(f => f.endsWith(".md"))
+    .sort()) {
     const source = path.join(dir, file);
     const { data, content } = parseFrontMatter(fs.readFileSync(source, "utf8"));
     const id = asString(data.id);
@@ -194,7 +200,11 @@ export function readLineList(config: Config, file: string, options: ImportOption
  * Creates the issues for the records (idempotent through the hidden id marker), then resolves parents and
  * dependencies once all exist. Returns one line per action.
  */
-export async function runImport(backlog: Backlog, records: ImportRecord[], options: ImportOptions = {}): Promise<string[]> {
+export async function runImport(
+  backlog: Backlog,
+  records: ImportRecord[],
+  options: ImportOptions = {}
+): Promise<string[]> {
   const lines: string[] = [];
   const existing = new Map<string, number>();
   const closed = new Set<number>();
@@ -211,7 +221,9 @@ export async function runImport(backlog: Backlog, records: ImportRecord[], optio
       continue;
     }
     if (options.dryRun) {
-      lines.push(`create ${r.id} [${[r.component, r.priority, r.status, r.role].filter(Boolean).join(" ")}] ${r.title}`);
+      lines.push(
+        `create ${r.id} [${[r.component, r.priority, r.status, r.role].filter(Boolean).join(" ")}] ${r.title}`
+      );
       continue;
     }
     const { item } = await backlog.create(
@@ -255,8 +267,7 @@ export async function runImport(backlog: Backlog, records: ImportRecord[], optio
         continue;
       }
       if (kind !== "parent" && closed.has(number)) continue;
-      const outcome =
-        kind === "parent" ? await backlog.setParent(number, other) : await backlog.block(number, other);
+      const outcome = kind === "parent" ? await backlog.setParent(number, other) : await backlog.block(number, other);
       if (outcome.changed) lines.push(`${kind} #${number} -> #${other}`);
     }
   }

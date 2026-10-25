@@ -109,9 +109,7 @@ export function toRawIssue(i: GqlIssue, f: Features): RawIssue {
     issueType: i.issueType?.name,
     parent: f.subIssues ? i.parent?.number : fallback.parent,
     children: f.subIssues ? toLinks(i.subIssues?.nodes) : fallback.children.map(number => ({ number })),
-    blockedBy: f.dependencies
-      ? toLinks(i.blockedBy?.nodes)
-      : fallback.blockedBy.map(number => ({ number })),
+    blockedBy: f.dependencies ? toLinks(i.blockedBy?.nodes) : fallback.blockedBy.map(number => ({ number })),
     blocking: f.dependencies ? toLinks(i.blocking?.nodes) : [],
     boards,
   };
@@ -388,7 +386,13 @@ export class GitHubApi implements PlanApi {
               name: spec.name,
               dataType: spec.options.length > 0 ? "SINGLE_SELECT" : "TEXT",
               ...(spec.options.length > 0
-                ? { singleSelectOptions: spec.options.map(name => ({ name, color: DEFAULT_OPTION_COLOR, description: "" })) }
+                ? {
+                    singleSelectOptions: spec.options.map(name => ({
+                      name,
+                      color: DEFAULT_OPTION_COLOR,
+                      description: "",
+                    })),
+                  }
                 : {}),
             },
           }

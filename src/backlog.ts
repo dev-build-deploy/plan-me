@@ -220,8 +220,11 @@ export class Backlog {
     return parts.filter(Boolean).join("\n\n") + "\n";
   }
 
-  /** Sets a status (reopening a closed issue unless the status is done); idempotent. */
-  async setStatus(ref: string | number, status: Status): Promise<Outcome> {
+  /**
+   * Sets a status (reopening a closed issue unless the status is done); idempotent.
+   * @param force Write the field even when the derived status already matches (an empty field reads as open)
+   */
+  async setStatus(ref: string | number, status: Status, force = false): Promise<Outcome> {
     if (!STATUSES.includes(status)) throw new Error(`unknown status "${status}"`);
     const raw = await this.raw(ref);
     const actions: string[] = [];
@@ -230,7 +233,7 @@ export class Backlog {
       raw.open = true;
       actions.push("reopened");
     }
-    const current = await this.item(raw);
+    const current = force ? undefined : await this.item(raw);
     actions.push(...(await this.write(raw, current, { status })));
     const after = (await this.api.getIssue(raw.number)) ?? raw;
     return { item: await this.item(after), changed: actions.length > 0, actions };

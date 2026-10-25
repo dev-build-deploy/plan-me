@@ -105,7 +105,7 @@ export async function sweep(backlog: Backlog, only?: number[]): Promise<string[]
     const raw = fieldsOf.get(item.number);
     const values = raw?.boards[config.boards[item.component].title] ?? {};
     if (values[config.fields.status.name] === undefined && item.status === "open") {
-      await backlog.setStatus(item.number, "open");
+      await backlog.setStatus(item.number, "open", true);
       lines.push(`#${item.number} status open`);
     }
     const dflt = config.fields.priority.default;
