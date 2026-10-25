@@ -7,9 +7,9 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 
-import { parseFrontMatter, readItemFolder, readLineList, runImport, shortTitle } from "../src/importer";
+import { parseFrontMatter, readItemFolder, readLineList, runImport, shortTitle } from "../src/importer.js";
 
-import { CONFIG, setup } from "./fake";
+import { CONFIG, setup } from "./fake.js";
 
 function tmp(files: Record<string, string>): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "plan-me-"));

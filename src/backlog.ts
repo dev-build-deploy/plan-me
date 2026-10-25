@@ -3,10 +3,10 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { FieldSpec, PlanApi, RawIssue } from "./api";
-import { componentLabel, Config, LabelConfig, SelectField, Status, STATUSES, typeLabel } from "./config";
-import { appendLine } from "./github";
-import { compareItems, componentOf, formatSnapshot, isEpic, Item, marker, MARKER, toItem, toItems } from "./item";
+import { FieldSpec, PlanApi, RawIssue } from "./api.js";
+import { componentLabel, Config, LabelConfig, SelectField, Status, STATUSES, typeLabel } from "./config.js";
+import { appendLine } from "./github.js";
+import { compareItems, componentOf, formatSnapshot, isEpic, Item, marker, MARKER, toItem, toItems } from "./item.js";
 
 /** The plan-me field values to write (keys, not option names); undefined fields are left alone. */
 export interface FieldValues {

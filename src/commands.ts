@@ -5,9 +5,9 @@
 
 import { z } from "zod";
 
-import { Backlog, Filters, Outcome } from "./backlog";
-import { STATUSES } from "./config";
-import { formatItem, Item } from "./item";
+import { Backlog, Filters, Outcome } from "./backlog.js";
+import { STATUSES } from "./config.js";
+import { formatItem, Item } from "./item.js";
 
 /** A command's output: compact text (the default) and the same data as JSON (`--json`, MCP). */
 export interface CommandResult {

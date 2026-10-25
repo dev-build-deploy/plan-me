@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { Features, FieldSpec, NewIssue, PlanApi, RawIssue } from "../src/api";
-import { Backlog } from "../src/backlog";
-import { BoardConfig, LabelConfig, resolveConfig } from "../src/config";
+import { Features, FieldSpec, NewIssue, PlanApi, RawIssue } from "../src/api.js";
+import { Backlog } from "../src/backlog.js";
+import { BoardConfig, LabelConfig, resolveConfig } from "../src/config.js";
 
 /** An in-memory PlanApi: issues, comments, labels and boards, with live link states. */
 export class FakeApi implements PlanApi {

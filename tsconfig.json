@@ -8,8 +8,9 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "moduleResolution": "node16",
-    "isolatedModules": true
+    "moduleResolution": "nodenext",
+    "isolatedModules": true,
+    "types": ["node", "jest"]
   },
   "exclude": ["node_modules"]
 }

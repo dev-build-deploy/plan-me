@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { Backlog } from "./backlog";
-import { Item } from "./item";
+import { Backlog } from "./backlog.js";
+import { Item } from "./item.js";
 
 /** The parts of a pull request event plan-me reads. */
 export interface PullRequestInfo {
