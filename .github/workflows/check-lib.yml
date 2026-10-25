@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: 2026 Kevin de Jong <monkaii@hotmail.com>
+# SPDX-License-Identifier: CC0-1.0
+
+---
+
+name: Check Distribution
+
+on:
+  pull_request:
+  workflow_call:
+
+jobs:
+  check-lib:
+    name: Check Lib/ Directory
+    uses: actions/reusable-workflows/.github/workflows/check-dist.yml@main
+    with:
+      dist-path: ./lib

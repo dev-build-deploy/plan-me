@@ -1,0 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Kevin de Jong <monkaii@hotmail.com>
+# SPDX-License-Identifier: CC0-1.0
+
+/lib/**/index.js linguist-generated=true
+package-lock.json -diff
+lib/**/index.js -diff

@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: 2026 Kevin de Jong <monkaii@hotmail.com>
+# SPDX-License-Identifier: MIT
+
+name: 'PlanMe - Backlog automation'
+author: 'Kevin de Jong'
+description: >
+  Keep your GitHub Issues and Projects v2 backlog consistent: deterministic, no AI.
+
+branding:
+  icon: 'list'
+  color: 'white'
+
+inputs:
+  token:
+    description: 'GitHub token used to access GitHub (needs issues:write and Projects access)'
+    required: false
+    default: ${{ github.token }}
+
+  config:
+    description: 'Path to the configuration file; by default ".plan-me.json" is used.'
+    required: false
+    default: '.plan-me.json'
+
+runs:
+  using: 'node24'
+  main: 'lib/action/index.js'

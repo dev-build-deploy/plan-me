@@ -1,0 +1,23 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: plan-me
+Upstream-Contact: Kevin de Jong <monkaii@hotmail.com>
+Source: https://github.com/dev-build-deploy/plan-me
+
+Files: lib/**
+Copyright: 2026 Kevin de Jong <monkaii@hotmail.com>
+License: MIT
+
+Files: package*.json
+       tsconfig.json
+Copyright: 2026 Kevin de Jong <monkaii@hotmail.com>
+License: CC0-1.0
+
+Files: .prettierrc.json
+Copyright: 2026 Kevin de Jong <monkaii@hotmail.com>
+License: CC0-1.0
+
+Files: .github/.commit-me.json
+       .plan-me.json
+       test/fixtures/**
+Copyright: 2026 Kevin de Jong <monkaii@hotmail.com>
+License: CC0-1.0
