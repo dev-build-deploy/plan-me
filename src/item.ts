@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { RawIssue } from "./api";
-import { Config, priorityKeys, SelectField, Status } from "./config";
+import { RawIssue } from "./api.js";
+import { Config, priorityKeys, SelectField, Status } from "./config.js";
 
 /** A backlog item: an issue read through the configuration (component, board fields, links). */
 export interface Item {

@@ -6,9 +6,9 @@
 import fs from "fs";
 import path from "path";
 
-import { Backlog } from "./backlog";
-import { Config, Status, STATUSES } from "./config";
-import { MARKER } from "./item";
+import { Backlog } from "./backlog.js";
+import { Config, Status, STATUSES } from "./config.js";
+import { MARKER } from "./item.js";
 
 /** One item read from a markdown backlog, before it becomes an issue. */
 export interface ImportRecord {

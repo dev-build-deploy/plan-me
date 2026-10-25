@@ -8,9 +8,9 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 // eslint-disable-next-line import/no-unresolved -- resolved through the package exports map
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
-import { createMcpServer } from "../src/mcp";
+import { createMcpServer } from "../src/mcp.js";
 
-import { setup } from "./fake";
+import { setup } from "./fake.js";
 
 describe("MCP server", () => {
   test("exposes the commands as tools and runs them", async () => {

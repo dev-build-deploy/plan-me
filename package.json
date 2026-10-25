@@ -2,6 +2,7 @@
   "name": "plan-me",
   "version": "0.0.1",
   "private": false,
+  "type": "module",
   "description": "Deterministic GitHub backlog management (Issues + Projects v2) for humans and LLMs",
   "author": "Kevin de Jong",
   "license": "MIT",
@@ -17,13 +18,15 @@
     "url": "https://github.com/dev-build-deploy/plan-me/issues"
   },
   "scripts": {
-    "build": "run-p build:*",
+    "build": "run-p build:* && npm run check:bundle",
+    "check:bundle": "node scripts/check-bundle.mjs lib",
     "build:cli": "ncc build -o lib/cli src/entrypoints/cli.ts",
     "build:action": "ncc build -o lib/action src/entrypoints/action.ts",
-    "test": "jest --coverage",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
     "lint": "eslint --ext .ts .",
     "format": "prettier --write **/*.ts && prettier --write **/**/*.ts",
-    "prepare": "node -e \"if(process.env.CI)process.exit(0);const r=require('child_process').spawnSync('pre-commit',['install','--hook-type','pre-commit','--hook-type','commit-msg'],{stdio:'inherit'});if(r.error)console.log('hint: install pre-commit (https://pre-commit.com) to get the git hooks')\""
+    "prepare": "node -e \"if(process.env.CI)process.exit(0);const r=require('child_process').spawnSync('pre-commit',['install','--hook-type','pre-commit','--hook-type','commit-msg'],{stdio:'inherit'});if(r.error)console.log('hint: install pre-commit (https://pre-commit.com) to get the git hooks')\"",
+    "test:bin": "node scripts/smoke-bin.mjs"
   },
   "bin": {
     "plan-me": "./bin/plan-me"
@@ -32,10 +35,10 @@
     "node": ">=24"
   },
   "dependencies": {
-    "@actions/core": "^1.11.1",
-    "@actions/github": "^6.0.1",
+    "@actions/core": "^3",
+    "@actions/github": "^9",
     "@modelcontextprotocol/sdk": "^1.32.2",
-    "commander": "^12.1.0",
+    "commander": "^15",
     "zod": "^4.6.7"
   },
   "devDependencies": {

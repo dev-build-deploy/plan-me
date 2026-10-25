@@ -6,10 +6,10 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 
-import { onIssueClosed, onPullRequest, sweep } from "../automation";
-import { Backlog } from "../backlog";
-import { loadConfig } from "../config";
-import { GitHubApi, OctokitLike } from "../github";
+import { onIssueClosed, onPullRequest, sweep } from "../automation.js";
+import { Backlog } from "../backlog.js";
+import { loadConfig } from "../config.js";
+import { GitHubApi, OctokitLike } from "../github.js";
 
 type PullRequestPayload = { number: number; merged?: boolean; body?: string | null; head: { ref: string } };
 

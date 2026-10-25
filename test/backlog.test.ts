@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { resolveConfig } from "../src/config";
+import { resolveConfig } from "../src/config.js";
 
-import { CONFIG, setup } from "./fake";
+import { CONFIG, setup } from "./fake.js";
 
 describe("config", () => {
   test("defaults", () => {

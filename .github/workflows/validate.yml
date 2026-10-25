@@ -27,3 +27,9 @@ jobs:
 
       - name: Run tests
         run: npm run test
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Smoke-test the committed bundles (CLI and MCP server)
+        run: npm run test:bin

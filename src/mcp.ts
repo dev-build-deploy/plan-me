@@ -9,8 +9,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
-import { Backlog } from "./backlog";
-import { CommandSpec, COMMANDS } from "./commands";
+import { Backlog } from "./backlog.js";
+import { CommandSpec, COMMANDS } from "./commands.js";
 
 /** The server version reported to MCP clients. */
 export const MCP_VERSION = "0.1.0";
