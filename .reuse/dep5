@@ -17,7 +17,5 @@ Copyright: 2026 Kevin de Jong <monkaii@hotmail.com>
 License: CC0-1.0
 
 Files: .github/.commit-me.json
-       .plan-me.json
-       test/fixtures/**
 Copyright: 2026 Kevin de Jong <monkaii@hotmail.com>
 License: CC0-1.0

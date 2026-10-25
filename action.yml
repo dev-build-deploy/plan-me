@@ -21,6 +21,10 @@ inputs:
     required: false
     default: '.plan-me.json'
 
+outputs:
+  changes:
+    description: 'The changes made, as a JSON list of lines (e.g. ["#12 in-progress (#40)"])'
+
 runs:
   using: 'node24'
   main: 'lib/action/index.js'

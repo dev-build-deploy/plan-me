@@ -40,6 +40,7 @@ export interface ImportOptions {
 }
 
 const TITLE_MAX = 100;
+const TITLE_MIN_CLAUSE = 30;
 const FRONT_MATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 
 /** Parses the flat YAML front matter plan-me reads (`key: value`, `key: [a, b]`, quoted strings). */
@@ -92,12 +93,26 @@ function mapComponent(config: Config, areas: string[], fallback?: string): strin
   return fallback;
 }
 
-/** A short title from free text: its first clause, cut at a word boundary. */
+/**
+ * A short title from free text: up to the first sentence end (or a colon after at least TITLE_MIN_CLAUSE
+ * characters), outside brackets and quotes, cut at a word boundary.
+ */
 export function shortTitle(text: string): string {
-  const first = text
-    .split(/(?<=\S)(?:\. |: )/)[0]
-    .trim()
-    .replace(/\.$/, "");
+  let depth = 0;
+  let quoted = false;
+  let end = text.length;
+  for (let i = 0; i < text.length - 1; i++) {
+    const c = text[i];
+    if ("([{".includes(c)) depth++;
+    else if (")]}".includes(c)) depth = Math.max(0, depth - 1);
+    else if (c === '"') quoted = !quoted;
+    const breaks = text[i + 1] === " " && (c === "." || (c === ":" && i >= TITLE_MIN_CLAUSE));
+    if (breaks && depth === 0 && !quoted) {
+      end = i;
+      break;
+    }
+  }
+  const first = text.slice(0, end).trim().replace(/\.$/, "");
   if (first.length <= TITLE_MAX) return first;
   return first.slice(0, TITLE_MAX).replace(/\s+\S*$/, "") + "…";
 }
@@ -214,6 +229,8 @@ export async function runImport(
     if (!raw.open) closed.add(raw.number);
   }
   const wanted = records.filter(r => r.status !== "done" || options.done === "closed");
+  const skipped = new Set(records.filter(r => !wanted.includes(r)).map(r => r.id));
+  const planned = new Set<string>();
   for (const r of wanted) {
     const have = existing.get(r.id);
     if (have !== undefined) {
@@ -221,6 +238,7 @@ export async function runImport(
       continue;
     }
     if (options.dryRun) {
+      planned.add(r.id);
       lines.push(
         `create ${r.id} [${[r.component, r.priority, r.status, r.role].filter(Boolean).join(" ")}] ${r.title}`
       );
@@ -257,6 +275,11 @@ export async function runImport(
       ...r.dependsOn.map(d => ["blocked by", d] as [string, string]),
     ];
     for (const [kind, id] of links) {
+      if (skipped.has(id)) continue; // a done item that was not imported: nothing to link or wait for
+      if (options.dryRun && (planned.has(id) || planned.has(r.id))) {
+        lines.push(`${kind} ${r.id} -> ${id}`);
+        continue;
+      }
       const other = existing.get(id);
       if (other === undefined || number === undefined) {
         lines.push(`warn ${r.id}: ${kind} "${id}" not found`);
