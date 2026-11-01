@@ -106,7 +106,8 @@ depends_on: [other-id]  # blocked by
 **(b) A line list** (`import backlog.md`): `## P1` headings set the priority; `- **id** · text. Helper: role.` starts
 an item (indented lines continue it), its title is the first sentence. After the id may come joined ids
 (`**id** + **other-id**`: the first id is the item), a `(meta)` group (dates, branches; brackets may nest; it stays
-in the body, not the title) and a `·`, `-` or `:` separator. A leading status phrase sets the status and is left out
+in the body, not the title) and a `·`, `-` or `:` separator. A leading priority option (`P3 · text`,
+`P3 (found by a test bot): text`) overrides the heading's priority and is left out of the title. A leading status phrase sets the status and is left out
 of the title (which comes from the next sentence): "In progress" -> in-progress, "Needs a decision" or "Needs
 decision" -> needs-decision, "Blocked" or "Blocked by <id>" -> blocked. `- ~~id~~ done ...` lines are done items, and
 so is every item under a `## Done` heading (up to the next `## P*`).

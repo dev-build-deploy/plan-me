@@ -116,6 +116,26 @@ describe("adapters", () => {
     expect(records[4].body).toBe("A dark theme.");
   });
 
+  test("line list: an item's own priority", () => {
+    const dir = tmp({
+      "backlog.md": [
+        "## P1",
+        "- **dark-mode** · P3 · A dark theme for the settings page.",
+        "- **login-timeout** · P2 (found by a test bot): Sessions expire too soon.",
+        "- **export-csv** (2026-10-01) · P3: Export the report as CSV.",
+        "- **pricing-tiers** · Pricing in tiers.",
+      ].join("\n"),
+    });
+    const records = readLineList(CONFIG, path.join(dir, "backlog.md"));
+    expect(records.map(r => [r.id, r.priority, r.title])).toEqual([
+      ["dark-mode", "P3", "A dark theme for the settings page"],
+      ["login-timeout", "P2", "Sessions expire too soon"],
+      ["export-csv", "P3", "Export the report as CSV"],
+      ["pricing-tiers", "P1", "Pricing in tiers"],
+    ]);
+    expect(records[1].body).toContain("(found by a test bot)");
+  });
+
   test("line list: status phrases", () => {
     const dir = tmp({
       "backlog.md": [
