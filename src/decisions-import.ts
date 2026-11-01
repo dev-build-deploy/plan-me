@@ -17,6 +17,7 @@ import {
   writeIndex,
 } from "./decisions";
 import { shortTitle } from "./importer";
+import { licenseHeader } from "./license";
 
 /**
  * The numbered-list formats `decisions import` reads:
@@ -288,6 +289,7 @@ export function importDecisions(
       continue;
     }
     const target = path.posix.join(set.dir, decisionFileName(d));
+    d.license = licenseHeader(root, target, d.date.slice(0, 4));
     lines.push(
       `${options.dryRun ? "would write" : "wrote"} ${target}${d.status === "current" ? "" : ` (${d.status} by ${d.supersededBy})`}`
     );
