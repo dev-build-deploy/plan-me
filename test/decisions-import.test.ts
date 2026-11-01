@@ -8,7 +8,7 @@ import fs from "fs";
 import path from "path";
 
 import { COMMANDS } from "../src/commands";
-import { checkDecisions, readDecisions } from "../src/decisions";
+import { checkDecisions, formatDecision, readDecisions } from "../src/decisions";
 import { findChanges, importDecisions, ListEntry, parseDecisionList, toDecisions } from "../src/decisions-import";
 
 import { repo } from "./repo";
@@ -111,12 +111,12 @@ describe("import", () => {
     const first = importDecisions(root, "docs/decisions.md", "numbered");
     expect(first).toContain("wrote docs/decisions/2026-10-10-notes-sync-only-over-the-account.md");
     expect(first).toContain(
-      "wrote docs/decisions/2026-10-10-every-page-must-load-fast-with.md (superseded by decisions-as-files-managed-by-plan)"
+      "wrote docs/decisions/2026-10-10-every-page-must-load-fast.md (superseded by decisions-as-files-managed-by-plan)"
     );
     expect(first[first.length - 1]).toBe("wrote docs/decisions.md");
     const second = importDecisions(root, "apps/web/docs/decisions.md", "labelled", { scope: ["web"] });
     expect(second).toContain(
-      "wrote docs/decisions/2026-10-17-a-standalone-web-app-on-the.md (superseded by a-synthetic-entry-for-the-tests)"
+      "wrote docs/decisions/2026-10-17-a-standalone-web-app.md (superseded by a-synthetic-entry-for-the-tests)"
     );
     expect(readDecisions(root, { dir: "docs/decisions", index: "docs/decisions.md" }).decisions).toHaveLength(52);
     expect(checkDecisions(root)).toEqual([]);
@@ -129,13 +129,43 @@ describe("import", () => {
       "- longer-trials-b · 79 · 2026-10-11 · amended by trial-and-grace-lengths-in-data · - · Longer trials (B)\n"
     );
     expect(index).toContain(
-      "- a-poc-of-the-board-as · L112 · 2026-10-28 · amended by the-columns-are-twice-as-wide · web · "
+      "- a-poc-of-the-board · L112 · 2026-10-28 · amended by columns-are-twice-as-wide · web · "
     );
-    expect(index.indexOf("## Superseded")).toBeLessThan(index.indexOf("- a-standalone-web-app-on-the · L2 "));
+    expect(index.indexOf("## Superseded")).toBeLessThan(index.indexOf("- a-standalone-web-app · L2 "));
 
     const rerun = importDecisions(root, "apps/web/docs/decisions.md", "labelled", { scope: ["web"] });
     expect(rerun[0]).toBe("exists L1 docs/decisions/2026-10-16-a-notes-app-for-the-owners.md");
     expect(rerun.every(l => l.startsWith("exists "))).toBe(true);
+    expect(checkDecisions(root)).toEqual([]);
+  });
+
+  test("a rerun keeps the ids of existing files, even when today's slug differs (#25)", () => {
+    const list = [
+      "1. **What has no future in the new release is removed** (2026-10-01, the owner): text one",
+      "2. **The report is built from the nightly data** (2026-10-02, the owner): text two",
+      "",
+    ].join("\n");
+    // A file written by an earlier version, whose slug still ended on stop words.
+    const old = formatDecision({
+      id: "what-has-no-future-in-the",
+      number: "1",
+      date: "2026-10-01",
+      by: "the owner",
+      status: "current",
+      scope: [],
+      summary: "What has no future in the new release is removed",
+      title: "What has no future in the new release is removed",
+      text: "text one",
+    });
+    const root = repo({ "list.md": list, "docs/decisions/2026-10-01-what-has-no-future-in-the.md": old });
+    expect(importDecisions(root, "list.md", "numbered")).toEqual([
+      "exists 1 docs/decisions/2026-10-01-what-has-no-future-in-the.md",
+      "wrote docs/decisions/2026-10-02-report-is-built.md",
+      "wrote docs/decisions.md",
+    ]);
+    const ids = readDecisions(root, { dir: "docs/decisions", index: "docs/decisions.md" }).decisions.map(d => d.id);
+    expect(ids.sort()).toEqual(["report-is-built", "what-has-no-future-in-the"]);
+    expect(importDecisions(root, "list.md", "numbered").every(l => l.startsWith("exists "))).toBe(true);
     expect(checkDecisions(root)).toEqual([]);
   });
 

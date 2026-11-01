@@ -48,7 +48,12 @@ const read = (root: string, file: string): string => fs.readFileSync(path.join(r
 
 describe("decision files", () => {
   test("slugs", () => {
-    expect(slugify("The grass budget is the engine's")).toBe("the-grass-budget-is-the-engines");
+    expect(slugify("The paint budget is the printer's")).toBe("paint-budget-is-the-printers");
+    // The cut never ends on a stop word, and a leading "the" goes (#25).
+    expect(slugify("What has no future in the new release is removed")).toBe("what-has-no-future");
+    expect(slugify("The report is built from the nightly data")).toBe("report-is-built");
+    expect(slugify("Of and the")).toBe("of-and-the");
+    expect(slugify("The")).toBe("the");
     expect(slugify("Één ruimte: São Paulo & co!")).toBe("een-ruimte-sao-paulo-co");
     expect(slugify("one two three four five six seven")).toBe("one-two-three-four-five-six");
     expect(slugify("!!!")).toBe("decision");

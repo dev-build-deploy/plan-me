@@ -147,7 +147,10 @@ plan-me decide "One file per decision in docs/decisions/, an index plan-me gener
   [--supersedes old-id] [--amends other-id] [--date 2026-11-01] [--id my-id]
 ```
 
-- writes `docs/decisions/<date>-<id>.md` (the id is the title's slug unless you give `--id`) and regenerates the index;
+- writes `docs/decisions/<date>-<id>.md` and regenerates the index. The id is the title's slug unless you give
+  `--id`: its first six words, lowercase, without the stop words that end the cut (`the`, `a`, `in`, `of`, `from`,
+  `to`, `is`, `and`, ...) and without a leading `the` ("The report is built from the nightly data" ->
+  `report-is-built`);
 - `--supersedes <id>` marks that decision `superseded` with `superseded_by` set to the new one; `--amends <id>`
   marks it `amended`;
 - `--question 42` answers question issue #42 (below); in `decide`, `--question` is always an issue number;
@@ -227,15 +230,16 @@ In both, indented lines continue the entry (numbered sub-points included); the w
 title, as written. The import:
 
 - keeps the label as `number` (`129`, `L99`);
-- makes the id from the title's first six words; when two entries (or an existing file) share that slug, the label
-  is appended (`same-title-l12`);
+- makes the id from the title's slug (see `decide`); when two entries (or an existing file) share that slug, the
+  label is appended (`same-title-l12`);
 - takes `by` from the entry only when it says `the user`, `the owner`, `the lead` or `the team`, else from `--by`
   (default `unknown`);
 - applies the changes an entry states about earlier entries, conservatively, within one sentence (split at `.` and
   `;`) containing supersede, replace, refine or amend: `Supersedes L3` or `replaces 9` (the reference right after the
   verb) marks that one `superseded`; `refines L50`, `... in L3`, `of L65`, `L96's ...` (numbered lists:
   `in decision 42`, `decision 42's`) marks it `amended`. When several later entries change one, the newest is named;
-- is rerunnable: an entry whose number already has a file is skipped (`exists`).
+- is rerunnable: an entry whose number already has a file is skipped (`exists`), and that file keeps its id even
+  when a newer plan-me would slug the title differently.
 
 Importing `docs/decisions.md` replaces that file with the generated index at the end; the old list stays in git's
 history. Read the imported files once: the import is a careful start, not a judgement, so fix a status or a title
