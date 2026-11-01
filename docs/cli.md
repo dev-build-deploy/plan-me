@@ -50,7 +50,8 @@ set by `new --id` and `import`).
 | `init [--dry-run]` | Creates the missing boards (one per component, linked to the repository), fields, options and labels, enables the Claude Code plugin (`claude install`) and writes the issue forms (`templates`). Existing options are kept. Prints one line per action, or `up to date`. |
 | `templates [--force] [--dry-run]` | Writes the issue forms: `.github/ISSUE_TEMPLATE/<type>.yml` per configured type and `config.yml` (see below). Unchanged files are left alone (`up to date`); a form edited by hand is left alone unless `--force`; a generated form for a type no longer configured is removed. |
 | `templates check` | One line per problem and exit code 1: a generated form missing, stale or for a type no longer configured. Forms edited by hand pass; a repository without plan-me's forms passes. |
-| `new <title> [--body t] [--type T] [--priority P] [--component c] [--role r] [--size s] [--parent ref] [--blocked-by ref]... [--design path]... [--id id]` | Creates an item: labels, issue type, board fields, sub-issue of its epic, dependencies (status blocked while a blocker is open), design doc links in the body. With `--id` it is idempotent. |
+| `new <title> --type T (--body t \| --body-file f) [--priority P] [--component c] [--role r] [--size s] [--parent ref] [--blocked-by ref]... [--design path]... [--id id]` | Creates an item: labels, issue type, board fields, sub-issue of its epic, dependencies (status blocked while a blocker is open), design doc links (in the type's Design docs section when it has one). The body must pass the [issue check](#the-issue-check): a body without the type's sections is refused and nothing is created; prose warnings are printed on stderr. `--body-file -` reads stdin. With `--id` it is idempotent. |
+| `check-issue [file] [--stdin] [--type T] [--title t] [--format text\|json\|hook] [--skeleton]` | Runs the [issue check](#the-issue-check) on a body (a file or stdin): one line per finding, a summary, exit code 1 on errors. `--skeleton --type T` prints the type's sections as an empty body to fill in. Needs no token; without a configuration file the default types apply. |
 | `start <ref> [--branch b]` | Status in-progress; the branch as a `Branch: b` line in the body. |
 | `block <ref> --by <ref>` | A "blocked by" dependency; status blocked while the blocker is open. |
 | `ask <ref\|title> [question]` | Opens a question: an issue (`12`, `#12`, an id) becomes needs-decision with the question as a comment; any other text is a new question issue's title (needs-decision, the question as its body; idempotent). |
@@ -65,7 +66,7 @@ set by `new --id` and `import`).
 | `list [filters] [--state open\|closed\|all]` | The matching items in the same order. |
 | `show <ref>` | One item: its line, URL and body. |
 | `snapshot [--out file]` | The open backlog, one line per item, per component, epics with their children indented. |
-| `import <path> [--format folder\|lines] [--component c] [--design-prefix p] [--done skip\|closed] [--dry-run]` | See below. |
+| `import <path> [--format folder\|lines] [--component c] [--design-prefix p] [--done skip\|closed] [--update] [--dry-run]` | See below. Exit code 1 when items were refused by the issue check. |
 | `claude install [--dry-run]` | Enables the plan-me Claude Code plugin in `.claude/settings.json`: `enabledPlugins["plan-me@dev-build-deploy"]` and the `dev-build-deploy` marketplace, merged into the file (everything else kept). Idempotent (`up to date`). No token needed. |
 | `claude check` | One line per problem and exit code 1 when a repository with the configuration file does not enable the plugin; `ok` otherwise. Every repository using plan-me uses the plugin: there is no opt-out. |
 | `mcp` | Runs the MCP server on stdio ([mcp.md](./mcp.md)); from a subfolder it works from the nearest folder upwards holding the configuration file. |
@@ -89,15 +90,21 @@ $ plan-me start 12 --branch feat/12-lab
 into `.github/ISSUE_TEMPLATE/`, so an issue opened in the GitHub UI has the same structure and fields as one made with
 `new`:
 
-| Type | Sections (`### <heading>` in the issue body) |
+| Type | Sections (`### <heading>` in the issue body; *optional* ones in italics) |
 | --- | --- |
-| Feature | Goal, Acceptance criteria, Design docs |
-| Bug | Steps to reproduce, Expected, Actual, Version, Evidence |
-| Task | What to do, Done when |
-| Design | Problem, Constraints, Options, Design docs |
-| Decision | Question, Options, Who decides, Context (opens as needs-decision; answered with `decide --question`) |
-| Epic | Outcome, Child items, Design docs |
-| any other type | Description |
+| Feature | Context, Problem, Expected value, Acceptance criteria, *Design docs* |
+| Bug | Context, Steps to reproduce, Observed behavior, Expected behavior, Additional context |
+| Task | Why, Context, What, Done when |
+| Design | Why, Context, What, *Constraints*, *Options*, *Design docs* |
+| Decision | Why, Context, What, Options, Who decides (opens as needs-decision; answered with `decide --question`) |
+| Epic | Why, Context, What, Outcome, *Child items*, *Design docs* |
+| any other type | Why, Context, What |
+
+Every type opens with the sections that make it understandable on its own: Why (the value), Context (what a newcomer
+needs to know first) and What; Feature and Bug have their own opening instead. The required sections are required in
+the form, and the [issue check](#the-issue-check) asks for the same ones, so an issue opened in the UI, made with
+`new` or imported is held to one shape. A change to the sections makes the generated forms stale: `templates check`
+reports them until `plan-me templates` writes them again.
 
 Every form then has a **Component** dropdown (the `boards`, default `defaultComponent`; only with more than one
 board) and the **Priority**, **Role** and **Size** fields (their configured names and options: dropdowns, or a text
@@ -126,11 +133,78 @@ $ plan-me templates
 .github/ISSUE_TEMPLATE up to date
 ```
 
+## The issue check
+
+An issue must be understandable by someone who has not seen the work before. `check-issue`, `new` (and the MCP tools
+`new` and `check_issue`), `import`, the Claude Code plugin and the Action all run the same deterministic check, the
+way [pull-me](https://github.com/dev-build-deploy/pull-me) checks a pull request description:
+
+| Rule | Level | What it finds |
+| --- | --- | --- |
+| PI001 | error | The issue has no type. |
+| PI002 | error | The type is not one of the configured `types`. |
+| PI003 | error | The title is empty. |
+| PI004 | error | The body has no sections: it is free text. |
+| PI005 | error | A required section of the type (table above) is missing. |
+| PI006 | error | A required section is empty, or holds only placeholders (`_No response_`, `TODO`, `...`, an empty list item, a comment). |
+| PI007 | warning | The sections are out of the type's order. |
+| `DevBuildDeploy.*`, `PlanMe.*` | warning | The prose, with [Vale](https://vale.sh) and the organization's styles (below). |
+
+Sections are `## ` or `### ` headings (any case, a trailing colon is fine; headings in fenced code don't count).
+Errors refuse the issue; warnings are reported (and the plugin denies them once per body).
+
+**The prose rules** are pull-me's Vale styles (`DevBuildDeploy`, copied into `vale/` from pull-me; see its
+`.vale.ini`): a term from the glossary used without saying what it is (`Glossary`), a reference that stands alone
+such as "See L99." or "Implements #12." (`BareReferences`), an abbreviation not written out once
+(`Abbreviations`), sentences over 30 words (`SentenceLength`), weasel words such as "very" or "basically"
+(`Weasel`), hedges (`Hedging`) and wordy phrases (`Wordy`). plan-me adds one rule of its own (`PlanMe.ItemReferences`):
+an order or dependency on a bare name, such as "after export-csv" or "blocked by #12", without saying what that item
+is. On an import the ids of the imported items count as such names.
+
+The glossary is pull-me's base glossary plus the repository's `.github/glossary.md` (one `- **term**: explanation`
+per line, pull-me's format, so one file serves both) and `issueCheck.glossary` ([config.md](./config.md)).
+
+**Vale itself**: `PLAN_ME_VALE`, else a `vale` on the `PATH` at least the pinned version (3.24.0), else the pinned
+release in plan-me's (or pull-me's) cache, else that release downloaded from GitHub and checked against its SHA-256
+(cached in `~/.cache/plan-me`, `PLAN_ME_CACHE` overrides). When Vale cannot run, the structure rules still apply and
+the report says `note: the prose was not checked: ...`. `"issueCheck": { "vale": false }` turns the prose rules off.
+
+```sh
+$ plan-me check-issue notes.md --type Task
+line 1: error: [PI004] The body has no sections: it is free text. Fix: Write the body as `### <section>` headings, each with its text. A Task has: Why, Context, What, Done when.
+line 1: warning: [DevBuildDeploy.BareReferences] 'See L99' is a bare reference: say in your own words what it says, and keep the reference as an extra. Fix: ...
+Found 1 error and 1 warning in the issue.
+$ plan-me check-issue --skeleton --type Task > body.md   # fill it in
+$ plan-me new "Export a note as Markdown" --type Task --body-file body.md
+```
+
+`--format hook` prints `{"errors": n, "warnings": n, "text": "...", "skipped": "..."}` for the plugin; `--format json`
+(or `--json`) the whole report.
+
 ## Import
 
 `import` is for moving an existing markdown backlog onto GitHub, once, and can be rerun safely: each issue carries a
 hidden `<!-- plan-me:id=<id> -->` marker, existing ids are skipped, and parents and dependencies are resolved after
-all items exist. `--dry-run` prints the plan.
+all items exist. `--dry-run` prints the plan, with every item's problems.
+
+Every record to write passes the [issue check](#the-issue-check) first: a record that fails is refused (nothing is
+written for it; its dependents get a `warn` line) and the others go ahead; the command then exits with 1. Prose
+warnings are `warn` lines.
+
+```sh
+$ plan-me import docs/backlog --dry-run
+refuse sync-retry: 2 error(s)
+  line 1: error: [PI001] The issue has no type. Fix: ...
+  line 1: error: [PI004] The body has no sections: it is free text. Fix: ...
+create export-md [web P2 open] Export a note as Markdown
+warn export-md: line 7: warning: [PlanMe.ItemReferences] 'after export-csv' names another item without saying what it is ...
+```
+
+**`--update`** fixes a bad import in place: an issue that already exists (found by its marker) is rewritten when its
+record differs: the title, the body (the lines added since, such as `Branch:`, `Parent: #n`, `Blocked by #n` and
+`Decision:`, are kept), the type (issue type or type label) and the Priority and Role fields. The status and the
+component are left alone (the work may have moved on). A record that fails the check is refused here too, so the issue
+keeps its text. `--update --dry-run` prints `update #12 export-md: title, body, type` per issue that would change.
 
 **(a) A folder of item files** (`import docs/backlog`): each `.md` file with front matter
 
@@ -149,6 +223,9 @@ design: [design/x.md]   # links in the body (prefixed with --design-prefix, defa
 depends_on: [other-id]  # blocked by
 ```
 
+The item file's markdown body (after a leading `# Title` line) is the issue body: write the type's sections as
+`## Why` or `### Why` headings (`##` headings that name a section of the type are written as `###`, like the forms).
+
 **(b) A line list** (`import backlog.md`): `## P1` headings set the priority; `- **id** · text. Helper: role.` starts
 an item (indented lines continue it), its title is the first sentence. After the id may come joined ids
 (`**id** + **other-id**`: the first id is the item), a `(meta)` group (dates, branches; brackets may nest; it stays
@@ -165,3 +242,7 @@ dependency; a plain word ("Depends on the new API") is ignored. "After <id>" any
 export-csv.`) counts only for known ids, without warnings ("after" is a common word).
 
 Done items are skipped by default; `--done closed` imports them as closed issues.
+
+A line holds one text, so it becomes the issue's What section and nothing else, without a type: the issue check
+refuses every line-list record. That is intended: a list of working notes is not a backlog others can pick up. Move
+the items into item files with their type and sections (a), then import those.

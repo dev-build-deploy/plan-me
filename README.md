@@ -18,12 +18,18 @@ by default, `--json` everywhere, idempotent commands, and a local snapshot to gr
   sub-issues, "blocked by" dependencies.
 - **Pick-up order**: `plan-me next` gives the open, unblocked item: P1 before P2 before P3; within a priority
   in-progress and needs-decision first.
-- **Import**: a folder of markdown item files with front matter, or a markdown line list; rerunnable.
+- **Import**: a folder of markdown item files with front matter, or a markdown line list; rerunnable; `--update`
+  rewrites the issues of an earlier import in place.
+- **Issues others can pick up**: every issue has a type and its sections (Why, Context, What, then the type's own),
+  and its prose is checked with Vale and the organization's styles, as
+  [pull-me](https://github.com/dev-build-deploy/pull-me) checks pull requests. `check-issue`, `new`, `import`, the
+  Claude Code plugin and the Action all refuse an issue that fails ([the issue check](./docs/cli.md#the-issue-check)).
 - **Decisions**: one file per decision in `docs/decisions/`, a generated index in `docs/decisions.md`, a check for
   the Action and pre-commit; no configuration (below).
-- **Issue templates**: an issue form per type (Bug: steps, expected vs actual, version, evidence; Feature: goal,
-  acceptance criteria, design docs; ...) with the component, Priority, Role and Size, which the Action copies to the
-  board; no configuration (below).
+- **Issue templates**: an issue form per type, with the same sections the issue check asks for (Bug: context, steps
+  to reproduce, observed and expected behavior, additional context; Feature: context, problem, expected value,
+  acceptance criteria; ...) and the component, Priority, Role and Size, which the Action copies to the board; no
+  configuration (below).
 
 ```sh
 $ plan-me snapshot
@@ -141,6 +147,9 @@ Commit the file; Claude Code then offers to install the plugin from the
 - **Hooks**, only in a repository with `.plan-me.json`:
   - `gh issue create`, `gh issue edit` and `gh issue close` are denied with the plan-me command to use instead
     (`new`, `start`/`block`/`ask`, `done`): they bypass the board fields. `gh issue view`, `list` and `comment` pass.
+    With a body, the denial also lists what the issue check finds in it.
+  - `plan-me new` and the MCP tool `new` run the bundled `plan-me check-issue` on the body first: errors deny always,
+    warnings deny once per body (the same body sent again goes through), as pull-me's plugin does for pull requests.
   - A Write or Edit of the generated `docs/decisions.md`, or of an issue form plan-me generated (a
     `.github/ISSUE_TEMPLATE/*.yml` with a `# plan-me:sha256=` line), is denied.
   - `git commit` with changed decision files runs `plan-me decisions check` first and is denied on its problems.
@@ -154,9 +163,11 @@ Commit the file; Claude Code then offers to install the plugin from the
 (`feature.yml`, `bug.yml`, `task.yml`, `design.yml`, `decision.yml`, `epic.yml`) and a `config.yml` (blank issues off),
 from the configuration and with no extra settings:
 
-- **Sections per type**: Feature (Goal, Acceptance criteria, Design docs), Bug (Steps to reproduce, Expected, Actual,
-  Version, Evidence), Task, Design, Decision (Question, Options, Who decides: opens as needs-decision, answered with
-  `decide --question`), Epic (Outcome, Child items).
+- **Sections per type**: Task, Design, Decision and Epic open with Why, Context and What, then their own (Task: Done
+  when; Design: Constraints, Options, Design docs; Decision: Options, Who decides, opens as needs-decision and is
+  answered with `decide --question`; Epic: Outcome, Child items, Design docs). Feature: Context, Problem, Expected
+  value, Acceptance criteria, Design docs. Bug: Context, Steps to reproduce, Observed behavior, Expected behavior,
+  Additional context. The required ones are required in the form and by the issue check.
 - **The plan-me fields**: a Component dropdown from `boards`, and Priority, Role and Size. The form sets the
   organization's issue type (else the `type:` label); the Action copies the answers to the labels and the board when
   the issue is opened.
