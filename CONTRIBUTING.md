@@ -24,6 +24,7 @@ We'd also love PRs. If you're thinking of a large PR, we advise opening up an is
 1. Configure and install the dependencies: `npm install`.
 1. Install the git hooks (commit-me, reuse-me, actionlint) through [pre-commit](https://pre-commit.com): install it first (`brew install pre-commit actionlint`), then run `npm run setup-hooks` (the same as `pre-commit install --hook-type pre-commit --hook-type commit-msg`). `npm install` does not install them: a `prepare` script would also run when this package is installed as a dependency or as a pre-commit hook, and there it broke the install and replaced the consuming repository's git hooks.
 1. Make sure the tests pass on your machine: `npm test`, note: these tests also apply the linter, so there's no need to lint separately.
+1. Set the version your change releases: `node scripts/version-check.mjs --write` writes it into `package.json`, `package-lock.json` and `claude-plugin/.claude-plugin/plugin.json` (a `feat` raises the minor version, a `fix` the patch, a breaking change the major). The Version check fails a pull request whose files say otherwise, because release-me tags the merge without writing them.
 1. Create a new branch: `git checkout -b my-branch-name`.
 1. Make your change, add tests, and make sure the tests still pass.
 1. Push to your fork and [submit a pull request][pr].
