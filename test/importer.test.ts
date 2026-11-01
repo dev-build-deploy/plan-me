@@ -92,6 +92,30 @@ describe("adapters", () => {
     ]);
   });
 
+  test("line list: meta after the id", () => {
+    const dir = tmp({
+      "backlog.md": [
+        "## P2",
+        "- **export-csv** (2026-10-01, branch feat/export) · Export the report as CSV.",
+        "- **login-timeout** (2026-10-02, branch fix/login (also the API)) · Sessions expire too soon.",
+        "- **search-filters** + **search-sort** (2026-10-03, branch feat/search) · Filters and sorting on search.",
+        "- **pricing-tiers** (draft): Two tiers or three.",
+        "- **dark-mode** - A dark theme.",
+      ].join("\n"),
+    });
+    const records = readLineList(CONFIG, path.join(dir, "backlog.md"));
+    expect(records.map(r => [r.id, r.title])).toEqual([
+      ["export-csv", "Export the report as CSV"],
+      ["login-timeout", "Sessions expire too soon"],
+      ["search-filters", "Filters and sorting on search"],
+      ["pricing-tiers", "Two tiers or three"],
+      ["dark-mode", "A dark theme"],
+    ]);
+    expect(records[0].body).toBe("(2026-10-01, branch feat/export) · Export the report as CSV.");
+    expect(records[1].body).toContain("(also the API)");
+    expect(records[4].body).toBe("A dark theme.");
+  });
+
   test("short titles", () => {
     expect(shortTitle("x".repeat(150)).length).toBeLessThanOrEqual(101);
     expect(shortTitle("One. Two.")).toBe("One");
