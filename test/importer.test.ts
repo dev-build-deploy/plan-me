@@ -125,6 +125,7 @@ describe("adapters", () => {
         "- **export-pdf** · Blocked. The PDF library is not chosen.",
         "- **export-xls** · Blocked by export-pdf, pricing-page. The same report as a spreadsheet.",
         "- **sync-notes** · In progress (branch feat/sync). Notes sync between devices.",
+        "- **print-view** · Blocked by the print library: A print layout.",
       ].join("\n"),
     });
     const records = readLineList(CONFIG, path.join(dir, "backlog.md"));
@@ -134,6 +135,36 @@ describe("adapters", () => {
       ["export-pdf", "blocked", "The PDF library is not chosen"],
       ["export-xls", "blocked", "The same report as a spreadsheet"],
       ["sync-notes", "in-progress", "Notes sync between devices"],
+      ["print-view", "blocked", "A print layout"],
+    ]);
+  });
+
+  test("line list: dependencies", () => {
+    const dir = tmp({
+      "backlog.md": [
+        "## P1",
+        "- **export-csv** · Export the report as CSV.",
+        "- **pricing-page** · The plans side by side.",
+        "- **export-pdf** · After export-csv: the same report as PDF.",
+        "- **export-xls** · Blocked by export-csv, pricing-page. The report as a spreadsheet.",
+        "- **share-link** · After export-csv and export-html: a link to the report. Depends on the new API.",
+        "- **after-lunch** · After lunch: a short break.",
+      ].join("\n"),
+    });
+    const records = readLineList(CONFIG, path.join(dir, "backlog.md"));
+    expect(records.map(r => [r.id, r.status, r.title, r.dependsOn, r.warnings])).toEqual([
+      ["export-csv", "open", "Export the report as CSV", [], []],
+      ["pricing-page", "open", "The plans side by side", [], []],
+      ["export-pdf", "open", "The same report as PDF", ["export-csv"], []],
+      ["export-xls", "blocked", "The report as a spreadsheet", ["export-csv", "pricing-page"], []],
+      [
+        "share-link",
+        "open",
+        "A link to the report",
+        ["export-csv"],
+        ['depends on "export-html", not an item in this file'],
+      ],
+      ["after-lunch", "open", "After lunch: a short break", [], []],
     ]);
   });
 
@@ -145,6 +176,25 @@ describe("adapters", () => {
 });
 
 describe("runImport", () => {
+  test("line-list dependencies and warnings in the dry run", async () => {
+    const { backlog } = setup();
+    const dir = tmp({
+      "backlog.md": [
+        "## P1",
+        "- **export-csv** · Export the report as CSV.",
+        "- **export-pdf** · After export-csv, export-html: the same report as PDF.",
+      ].join("\n"),
+    });
+    const dry = await runImport(backlog, readLineList(CONFIG, path.join(dir, "backlog.md")), { dryRun: true });
+    expect(dry).toEqual(
+      expect.arrayContaining([
+        "blocked by export-pdf -> export-csv",
+        'warn export-pdf: depends on "export-html", not an item in this file',
+      ])
+    );
+    expect(dry.some(l => l.includes("-> export-html"))).toBe(false);
+  });
+
   test("creates, links and is idempotent", async () => {
     const { api, backlog } = setup();
     const dir = tmp({
