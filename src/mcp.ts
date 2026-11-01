@@ -21,8 +21,9 @@ type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean
  * Builds the MCP server with one tool per command. Each tool answers with the compact text by default, or the JSON
  * when called with `json: true`.
  * @param makeBacklog Returns the backlog to run against (a fresh one per call, so nothing is stale)
+ * @param root The repository root holding the decision files (default the working directory)
  */
-export function createMcpServer(makeBacklog: () => Backlog): McpServer {
+export function createMcpServer(makeBacklog: () => Backlog, root: string = process.cwd()): McpServer {
   const server = new McpServer({ name: "plan-me", version: MCP_VERSION });
   for (const [name, spec] of Object.entries(COMMANDS) as [string, CommandSpec<z.ZodRawShape>][]) {
     server.registerTool(
@@ -35,8 +36,9 @@ export function createMcpServer(makeBacklog: () => Backlog): McpServer {
       async (args: Record<string, unknown>): Promise<ToolResult> => {
         try {
           const { json, ...rest } = args;
-          const result = await spec.run(makeBacklog(), rest);
-          return { content: [{ type: "text", text: json ? JSON.stringify(result.json) : result.text }] };
+          const result = await spec.run({ backlog: makeBacklog, root }, rest);
+          const text = json ? JSON.stringify(result.json) : result.text;
+          return { content: [{ type: "text", text }], ...(result.failed ? { isError: true } : {}) };
         } catch (e) {
           return { content: [{ type: "text", text: `error: ${(e as Error).message}` }], isError: true };
         }

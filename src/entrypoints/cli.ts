@@ -46,8 +46,9 @@ function print(g: Globals, text: string, json: unknown): void {
 async function run(cmd: Command, name: CommandName, args: Record<string, unknown>): Promise<void> {
   const g = cmd.optsWithGlobals<Globals>();
   const spec = COMMANDS[name];
-  const result = await spec.run(backlogFor(g), args as never);
+  const result = await spec.run({ backlog: () => backlogFor(g), root: process.cwd() }, args as never);
   print(g, result.text, result.json);
+  if (result.failed) process.exitCode = 1;
 }
 
 /** Collects a repeatable option into a list. */
@@ -115,10 +116,46 @@ program
   .action(async (ref: string, opts: { by: string }, cmd: Command) => run(cmd, "block", { ref, by: opts.by }));
 
 program
-  .command("decide <ref>")
-  .description("Mark an item needs-decision")
-  .option("--question <text>", "The question (a comment)")
-  .action(async (ref: string, opts: { question?: string }, cmd: Command) => run(cmd, "decide", { ref, ...opts }));
+  .command("decide <ref-or-text>")
+  .description(
+    "Ask: `decide <ref> [--question text]` marks an item needs-decision. Record: `decide <text> --title t --by b` " +
+      "writes docs/decisions/<date>-<id>.md and regenerates docs/decisions.md"
+  )
+  .option("--question <text-or-ref>", "Asking: the question (a comment). Recording: the question issue it answers")
+  .option("--title <t>", "Recording: the decision's title (its slug is the id); switches decide to recording")
+  .option("--by <who>", "Recording: who decided")
+  .option("--summary <line>", "Recording: one line for the index (default the title)")
+  .option("--scope <area>", "Recording: an area it applies to (repeatable)", collect)
+  .option("--supersedes <id>", "Recording: the decision it replaces (becomes superseded)")
+  .option("--amends <id>", "Recording: the decision it changes (becomes amended)")
+  .option("--date <yyyy-mm-dd>", "Recording: the date (default today)")
+  .option("--id <id>", "Recording: the id (default the title's slug)")
+  .action(async (first: string, opts: Record<string, unknown>, cmd: Command) =>
+    run(cmd, "decide", opts.title === undefined ? { ref: first, ...opts } : { text: first, ...opts })
+  );
+
+const decisions = program.command("decisions").description("The decision files (docs/decisions/) and their index");
+
+decisions
+  .command("index")
+  .description("Regenerate docs/decisions.md from docs/decisions/ (never edit it by hand)")
+  .action(async (_opts: unknown, cmd: Command) => run(cmd, "decisions_index", {}));
+
+decisions
+  .command("check")
+  .description("Fail when a decision file is invalid, ids collide, superseded_by points nowhere or the index is stale")
+  .action(async (_opts: unknown, cmd: Command) => run(cmd, "decisions_check", {}));
+
+decisions
+  .command("import <file>")
+  .description("Convert an old numbered list into one file per decision, keeping the numbers (rerunnable)")
+  .requiredOption("--format <f>", "numbered (`129. **Title** (date, by): text`) or labelled (`- **L99** (date) text`)")
+  .option("--by <who>", "Who decided, for entries that don't say", "unknown")
+  .option("--scope <area>", "A scope for every imported decision (repeatable)", collect)
+  .option("--dry-run", "Only print what would be written")
+  .action(async (file: string, opts: Record<string, unknown>, cmd: Command) =>
+    run(cmd, "decisions_import", { file, ...opts })
+  );
 
 program
   .command("done <ref>")
