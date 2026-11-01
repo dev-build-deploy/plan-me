@@ -194,8 +194,10 @@ function leadingStatus(text: string): { status?: Status; rest: string } {
   return { rest: text };
 }
 
-/** A leading `After <id>[, <id>]:` clause: the items this one comes after. */
-const AFTER_CLAUSE = new RegExp(String.raw`^After\s+(${NAMED_IDS})\s*:\s*`, "i");
+/** The start of a leading `After <id>[, <id>] (...):` clause: the items this one comes after. */
+const AFTER_CLAUSE = new RegExp(String.raw`^After\s+(${NAMED_IDS})`, "i");
+/** `After <id>` anywhere in the text (only known ids count: "after" is a common word). */
+const AFTER_PHRASE = new RegExp(String.raw`\bAfter\s+(${NAMED_IDS})`, "gi");
 /** `Blocked by <id>[, <id>]` or `Depends on <id>[, <id>]` anywhere in the text. */
 const DEPENDENCY_PHRASE = new RegExp(String.raw`\b(?:Blocked by|Depends on)\s+(${NAMED_IDS})`, "gi");
 
@@ -210,14 +212,16 @@ function looksLikeId(name: string): boolean {
 }
 
 /**
- * A leading `After <id>[, <id>]:` clause: its names, and the text without it (the next word capitalised). A clause
- * naming no id (`After lunch:`) is plain text.
+ * A leading `After <id>[, <id>]:` clause (a `(...)` group may come before the colon): its names, and the text
+ * without it (the next word capitalised). A clause naming no id (`After lunch:`) is plain text.
  */
 function afterClause(text: string, known: Set<string>): { names: string[]; rest: string } {
   const after = AFTER_CLAUSE.exec(text);
-  const names = after ? splitNames(after[1]) : [];
-  if (!after || !names.some(n => known.has(n) || looksLikeId(n))) return { names: [], rest: text };
-  const rest = text.slice(after[0].length);
+  if (!after) return { names: [], rest: text };
+  const tail = skipMeta(text.slice(after[0].length).trim()).trim();
+  const names = splitNames(after[1]);
+  if (!tail.startsWith(":") || !names.some(n => known.has(n) || looksLikeId(n))) return { names: [], rest: text };
+  const rest = tail.slice(1).trim();
   return { names, rest: rest.charAt(0).toUpperCase() + rest.slice(1) };
 }
 
@@ -284,7 +288,8 @@ function lineRecord(
   const { status, rest } = leadingStatus(text);
   const after = afterClause(rest, known);
   const phrases = [...text.matchAll(DEPENDENCY_PHRASE)].flatMap(m => splitNames(m[1]));
-  const deps = resolveNames(item.id, [...after.names, ...phrases], known);
+  const later = [...text.matchAll(AFTER_PHRASE)].flatMap(m => splitNames(m[1])).filter(n => known.has(n));
+  const deps = resolveNames(item.id, [...after.names, ...phrases, ...later], known);
   return {
     id: item.id,
     title: shortTitle(after.rest || item.id),
@@ -307,8 +312,8 @@ function lineRecord(
  * it). After the id may come joined ids (`+ **other-id**`, the first id is the item), a balanced `(meta)` group
  * (kept in the body, not the title) and a `·`, `-` or `:` separator. `- ~~id~~ done ...` is a done item. A leading
  * "In progress", "Needs (a) decision" or "Blocked (by x)" sets the status and is left out of the title, as is a
- * leading `After <id>[, <id>]:` clause. Dependencies: the ids defined in the same file named in that clause or after
- * "Blocked by" / "Depends on"; an unknown id is a warning.
+ * leading `After <id>[, <id>] (...):` clause. Dependencies: the ids defined in the same file named in that clause
+ * or after "Blocked by" / "Depends on" (an unknown id is a warning), or after "After" anywhere else (known ids only).
  */
 export function readLineList(config: Config, file: string, options: ImportOptions = {}): ImportRecord[] {
   const items: LineItem[] = [];
