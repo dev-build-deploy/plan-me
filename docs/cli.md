@@ -108,7 +108,11 @@ an item (indented lines continue it), its title is the first sentence. After the
 (`**id** + **other-id**`: the first id is the item), a `(meta)` group (dates, branches; brackets may nest; it stays
 in the body, not the title) and a `·`, `-` or `:` separator. A leading status phrase sets the status and is left out
 of the title (which comes from the next sentence): "In progress" -> in-progress, "Needs a decision" or "Needs
-decision" -> needs-decision, "Blocked" or "Blocked by <id>" -> blocked;
-`- ~~id~~ done ...` lines are done items, and so is every item under a `## Done` heading (up to the next `## P*`).
+decision" -> needs-decision, "Blocked" or "Blocked by <id>" -> blocked. `- ~~id~~ done ...` lines are done items, and
+so is every item under a `## Done` heading (up to the next `## P*`).
+
+Dependencies in a line list are the ids **defined in the same file** named in a leading `After <id>[, <id>]:` clause
+(left out of the title) or after "Blocked by" / "Depends on" (`a, b` or `a and b`). An unknown name that looks like an
+id (`export-html`) is a `warn` line in the plan, not a dependency; a plain word ("Depends on the new API") is ignored.
 
 Done items are skipped by default; `--done closed` imports them as closed issues.
