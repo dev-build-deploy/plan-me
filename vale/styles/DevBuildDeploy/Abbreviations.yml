@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: 2026 Kevin de Jong <monkaii@hotmail.com>
+# SPDX-License-Identifier: MIT
+
+# An abbreviation must be explained the first time it is used: "API (application programming interface)" or
+# "application programming interface (API)" or "ES modules (ESM, the module format of JavaScript)". pull-me adds the repository's known abbreviations and glossary terms
+# to the exceptions when it runs Vale.
+extends: conditional
+message: "Explain '%s' the first time you use it: write out what it stands for, in brackets."
+level: warning
+ignorecase: false
+first: '\b([A-Z]{2,6})\b'
+second: '(?:\b([A-Z]{2,6}) \([a-z][^)]{2,}\)|\(([A-Z]{2,6})[,)])'
+exceptions:
+  - API
+  - CI
+  - CLI
+  - CSS
+  - HTML
+  - HTTP
+  - HTTPS
+  - ID
+  - JSON
+  - KB
+  - MB
+  - GB
+  - MIT
+  - OK
+  - PR
+  - README
+  - SQL
+  - TODO
+  - UI
+  - URL
+  - YAML

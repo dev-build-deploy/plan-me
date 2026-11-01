@@ -6,9 +6,13 @@
 import fs from "fs";
 import path from "path";
 
-import { Backlog } from "./backlog";
-import { Config, Status, STATUSES } from "./config";
-import { MARKER } from "./item";
+import { RawIssue } from "./api";
+import { Backlog, NewItem } from "./backlog";
+import { Config, Status, STATUSES, typeLabel } from "./config";
+import { appendLine, BLOCKED_BY_LINE, PARENT_LINE, TASK_LIST_LINE } from "./github";
+import { checkIssues, IssueCheckOptions, IssueReport, problemLines } from "./issue-check";
+import { MARKER, typeOf } from "./item";
+import { sectionsFor } from "./templates";
 
 /** One item read from a markdown backlog, before it becomes an issue. */
 export interface ImportRecord {
@@ -39,6 +43,19 @@ export interface ImportOptions {
   /** Done items: skip them (default) or import them closed. */
   done?: "skip" | "closed";
   dryRun?: boolean;
+  /** Rewrite the issues that exist already (by id) when their title, body, type or fields differ from the record. */
+  update?: boolean;
+  /** How the issue check runs (default: the real Vale, the glossary in the working directory). */
+  check?: IssueCheckOptions;
+}
+
+/** The section headings of a type written as `## X` in an item file: plan-me writes them as `### X`, like the forms. */
+function sectionHeadings(text: string, type: string | undefined): string {
+  if (!type) return text;
+  const labels = new Set(sectionsFor(type).map(s => s.label.toLowerCase()));
+  return text.replace(/^##[ \t]+(.+?)[ \t]*$/gm, (line, label: string) =>
+    labels.has(label.replace(/:$/, "").toLowerCase()) ? `### ${label}` : line
+  );
 }
 
 const TITLE_MAX = 100;
@@ -143,8 +160,9 @@ export function readItemFolder(config: Config, dir: string, options: ImportOptio
     const status = asString(data.status) as Status | undefined;
     const title = asString(data.title) ?? id;
     const decisions = asString(data.decisions);
+    const type = mapType(config, asString(data.type));
     const body = [
-      content.replace(/^\s*#\s+.*\r?\n/, "").trim(),
+      sectionHeadings(content.replace(/^\s*#\s+.*\r?\n/, "").trim(), type),
       decisions ? `Decisions: ${decisions}` : "",
       asString(data.owner) ? `Owner: ${asString(data.owner)}` : "",
     ]
@@ -154,7 +172,7 @@ export function readItemFolder(config: Config, dir: string, options: ImportOptio
       id,
       title,
       body,
-      type: mapType(config, asString(data.type)),
+      type,
       status: status && STATUSES.includes(status) ? status : "open",
       priority: asString(data.priority),
       component: mapComponent(config, asList(data.area), options.component),
@@ -293,7 +311,9 @@ function lineRecord(
   return {
     id: item.id,
     title: shortTitle(after.rest || item.id),
-    body,
+    // A line holds one text: it is the What; the other sections are missing, so the issue check refuses the record
+    // until the list carries them (or the items move to a folder of item files).
+    body: `### What\n\n${body}`,
     status: item.done ? "done" : (status ?? "open"),
     priority: own.priority ?? item.priority,
     component: options.component,
@@ -349,9 +369,86 @@ export function readLineList(config: Config, file: string, options: ImportOption
   return items.map(item => lineRecord(item, known, priorities, file, options));
 }
 
+/** The `new` input for a record. */
+function newItemOf(r: ImportRecord): NewItem {
+  return {
+    id: r.id,
+    title: r.title,
+    body: `${r.body}\n\n_Imported from ${r.source}_`,
+    type: r.type,
+    priority: r.priority,
+    component: r.component,
+    role: r.role,
+    design: r.design,
+  };
+}
+
+/** The lines plan-me (or a pull request) adds to a body after it is created: kept when `--update` rewrites it. */
+function isAddedLine(line: string): boolean {
+  const t = line.trim();
+  const re = (r: RegExp): boolean => new RegExp(r.source, r.flags.replace("g", "")).test(t);
+  return re(PARENT_LINE) || re(BLOCKED_BY_LINE) || re(TASK_LIST_LINE) || /^(?:Branch|Decision): \S/.test(t);
+}
+
+/** The body `--update` writes: the record's, plus the lines added to the issue since. */
+export function updatedBody(wanted: string, current: string): string {
+  const added = current.split(/\r?\n/).filter(isAddedLine);
+  let body = wanted;
+  for (const line of added) body = appendLine(body, line.trim());
+  return body;
+}
+
+/** What `--update` would change on an existing issue: title, body, type. */
+function differences(backlog: Backlog, raw: RawIssue, item: NewItem, body: string): string[] {
+  const out: string[] = [];
+  if (raw.title !== item.title) out.push("title");
+  if (raw.body.trim() !== body.trim()) out.push("body");
+  const current = typeOf(backlog.config, raw);
+  if (item.type && current?.toLowerCase() !== item.type.toLowerCase()) out.push("type");
+  return out;
+}
+
+/** Rewrites an existing issue to its record: title, body, type (issue type or label), priority and role. */
+async function updateIssue(backlog: Backlog, raw: RawIssue, item: NewItem, body: string): Promise<string[]> {
+  const changes = differences(backlog, raw, item, body);
+  const { issueTypes } = await backlog.api.features();
+  const native = item.type ? issueTypes.find(t => t.toLowerCase() === item.type?.toLowerCase()) : undefined;
+  if (changes.includes("title") || changes.includes("body") || (changes.includes("type") && native)) {
+    await backlog.api.updateIssue(raw.number, {
+      ...(changes.includes("title") ? { title: item.title } : {}),
+      ...(changes.includes("body") ? { body } : {}),
+      ...(changes.includes("type") && native ? { issueType: native } : {}),
+    });
+  }
+  if (changes.includes("type") && !native && item.type) {
+    const config = backlog.config;
+    for (const label of raw.labels.filter(l => l.startsWith(config.typeLabelPrefix))) {
+      await backlog.api.removeLabel(raw.number, label);
+    }
+    await backlog.api.addLabels(raw.number, [typeLabel(config, item.type)]);
+  }
+  const fields = await backlog.update(raw.number, { priority: item.priority, role: item.role });
+  return [...changes, ...fields.actions];
+}
+
+/** The `refuse` line and the problems of a record that fails the issue check. */
+function refusal(r: ImportRecord, report: IssueReport): string[] {
+  return [`refuse ${r.id}: ${report.errors} error(s)`, ...problemLines(report).map(l => `  ${l}`)];
+}
+
+/** The warnings of a record that passes, as `warn` lines. */
+function warnings(r: ImportRecord, report: IssueReport): string[] {
+  return problemLines(report)
+    .filter(l => l.includes(" warning: "))
+    .map(l => `warn ${r.id}: ${l}`);
+}
+
 /**
  * Creates the issues for the records (idempotent through the hidden id marker), then resolves parents and
- * dependencies once all exist. Returns one line per action.
+ * dependencies once all exist. Every record to write first passes the issue check (its type and sections, and the
+ * prose as warnings): a failing record is refused (`refuse <id>` and its problems), the others go ahead. With
+ * `update`, existing issues whose title, body, type, priority or role differ from their record are rewritten.
+ * Returns one line per action.
  */
 export async function runImport(
   backlog: Backlog,
@@ -360,19 +457,56 @@ export async function runImport(
 ): Promise<string[]> {
   const lines: string[] = [];
   const existing = new Map<string, number>();
+  const raws = new Map<string, RawIssue>();
   const closed = new Set<number>();
   for (const raw of await backlog.api.listIssues(true)) {
     const id = MARKER.exec(raw.body)?.[1];
-    if (id) existing.set(id, raw.number);
+    if (id) {
+      existing.set(id, raw.number);
+      raws.set(id, raw);
+    }
     if (!raw.open) closed.add(raw.number);
   }
   const wanted = records.filter(r => r.status !== "done" || options.done === "closed");
   const skipped = new Set(records.filter(r => !wanted.includes(r)).map(r => r.id));
   const planned = new Set<string>();
+
+  // The issue check over every record that will be written, in one Vale run.
+  const toCheck = wanted.filter(r => !existing.has(r.id) || options.update);
+  const items = new Map(toCheck.map(r => [r.id, newItemOf(r)]));
+  const bodies = new Map(toCheck.map(r => [r.id, backlog.bodyFor(items.get(r.id) as NewItem)]));
+  const reports = await checkIssues(
+    toCheck.map(r => ({ title: r.title, type: r.type, body: bodies.get(r.id) as string })),
+    backlog.config,
+    { root: process.cwd(), ...options.check, itemIds: records.map(r => r.id) }
+  );
+  const reportOf = new Map(toCheck.map((r, i) => [r.id, reports[i]]));
+  const skippedNote = reports[0]?.skipped;
+  if (skippedNote && !skippedNote.endsWith(" off")) lines.push(`note: ${skippedNote}`);
+
   for (const r of wanted) {
     const have = existing.get(r.id);
-    if (have !== undefined) {
+    const report = reportOf.get(r.id);
+    if (have !== undefined && !options.update) {
       lines.push(`exists #${have} ${r.id}`);
+      continue;
+    }
+    if (report && report.errors > 0) {
+      lines.push(...refusal(r, report));
+      continue;
+    }
+    const item = items.get(r.id) as NewItem;
+    if (have !== undefined) {
+      const raw = raws.get(r.id) as RawIssue;
+      const body = updatedBody(bodies.get(r.id) as string, raw.body);
+      if (options.dryRun) {
+        const changes = differences(backlog, raw, item, body);
+        lines.push(changes.length > 0 ? `update #${have} ${r.id}: ${changes.join(", ")}` : `exists #${have} ${r.id}`);
+      } else {
+        const changes = await updateIssue(backlog, raw, item, body);
+        lines.push(changes.length > 0 ? `updated #${have} ${r.id}: ${changes.join("; ")}` : `exists #${have} ${r.id}`);
+      }
+      if (report) lines.push(...warnings(r, report));
       continue;
     }
     if (options.dryRun) {
@@ -380,34 +514,26 @@ export async function runImport(
       lines.push(
         `create ${r.id} [${[r.component, r.priority, r.status, r.role].filter(Boolean).join(" ")}] ${r.title}`
       );
+      if (report) lines.push(...warnings(r, report));
       continue;
     }
-    const { item } = await backlog.create(
-      {
-        id: r.id,
-        title: r.title,
-        body: `${r.body}\n\n_Imported from ${r.source}_`,
-        type: r.type,
-        priority: r.priority,
-        component: r.component,
-        role: r.role,
-        design: r.design,
-      },
-      false
-    );
-    existing.set(r.id, item.number);
-    lines.push(`created #${item.number} ${r.id}`);
+    const created = (await backlog.create(item, false)).item;
+    existing.set(r.id, created.number);
+    lines.push(`created #${created.number} ${r.id}`);
+    if (report) lines.push(...warnings(r, report));
     if (r.status === "done") {
-      await backlog.done(item.number, "Imported as done.");
-      closed.add(item.number);
-      lines.push(`closed #${item.number} ${r.id}`);
+      await backlog.done(created.number, "Imported as done.");
+      closed.add(created.number);
+      lines.push(`closed #${created.number} ${r.id}`);
     } else if (r.status !== "open") {
-      await backlog.setStatus(item.number, r.status);
-      lines.push(`status #${item.number} ${r.status}`);
+      await backlog.setStatus(created.number, r.status);
+      lines.push(`status #${created.number} ${r.status}`);
     }
   }
+  const refused = new Set(wanted.filter(r => (reportOf.get(r.id)?.errors ?? 0) > 0).map(r => r.id));
   for (const r of wanted) {
     for (const warning of r.warnings ?? []) lines.push(`warn ${r.id}: ${warning}`);
+    if (refused.has(r.id)) continue;
     const number = existing.get(r.id);
     const links: [string, string][] = [
       ...(r.parent ? [["parent", r.parent] as [string, string]] : []),
@@ -415,6 +541,10 @@ export async function runImport(
     ];
     for (const [kind, id] of links) {
       if (skipped.has(id)) continue; // a done item that was not imported: nothing to link or wait for
+      if (refused.has(id)) {
+        lines.push(`warn ${r.id}: ${kind} "${id}" was refused`);
+        continue;
+      }
       if (options.dryRun && (planned.has(id) || planned.has(r.id))) {
         lines.push(`${kind} ${r.id} -> ${id}`);
         continue;
@@ -434,4 +564,9 @@ export async function runImport(
     }
   }
   return lines;
+}
+
+/** Whether an import refused records (the CLI then exits with 1). */
+export function importRefused(lines: string[]): boolean {
+  return lines.some(l => l.startsWith("refuse "));
 }

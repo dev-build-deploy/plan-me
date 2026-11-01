@@ -45,6 +45,18 @@ export interface TemplatesConfig {
   contactLinks: ContactLink[];
 }
 
+/** How the issue check (`check-issue`, `new`, `import`, the Action) reads the text of an issue. */
+export interface IssueCheckConfig {
+  /** `false`: only the structure (type, sections), no Vale prose rules. */
+  vale: boolean;
+  /** The repository's glossary, one `- **term**: explanation` per line (default `.github/glossary.md`). */
+  glossaryFile: string;
+  /** More glossary terms (term -> explanation). */
+  glossary: Record<string, string>;
+  /** More patterns (regular expressions) for references that must not stand alone, such as `\\bRFC-\\d+\\b`. */
+  referencePatterns: string[];
+}
+
 /** The resolved configuration (all defaults applied). */
 export interface Config {
   repository: string;
@@ -67,6 +79,7 @@ export interface Config {
   /** The plan-me versions this repository works with (a semver range); the CLI warns when it doesn't satisfy it. */
   version?: string;
   templates: TemplatesConfig;
+  issueCheck: IssueCheckConfig;
 }
 
 /** The configuration file name looked up in the working directory. */
@@ -100,7 +113,16 @@ type RawConfig = {
   branchPattern?: string;
   version?: string;
   templates?: boolean | { blankIssues?: boolean; contactLinks?: ContactLink[] };
+  issueCheck?: {
+    vale?: boolean;
+    glossaryFile?: string;
+    glossary?: Record<string, string>;
+    referencePatterns?: string[];
+  };
 };
+
+/** The repository glossary the issue check reads when `issueCheck.glossaryFile` is not set (as pull-me does). */
+export const DEFAULT_GLOSSARY_FILE = ".github/glossary.md";
 
 function toOptions(raw: Record<string, string> | string[] | undefined, fallback: string[]): Record<string, string> {
   if (raw === undefined) return Object.fromEntries(fallback.map(o => [o, o]));
@@ -157,6 +179,12 @@ export function resolveConfig(raw: RawConfig, repository?: string): Config {
       enabled: raw.templates !== false,
       blankIssues: (typeof raw.templates === "object" && raw.templates.blankIssues) || false,
       contactLinks: (typeof raw.templates === "object" && raw.templates.contactLinks) || [],
+    },
+    issueCheck: {
+      vale: raw.issueCheck?.vale !== false,
+      glossaryFile: raw.issueCheck?.glossaryFile ?? DEFAULT_GLOSSARY_FILE,
+      glossary: { ...(raw.issueCheck?.glossary ?? {}) },
+      referencePatterns: [...(raw.issueCheck?.referencePatterns ?? [])],
     },
   };
 }

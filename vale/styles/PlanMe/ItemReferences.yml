@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2026 Kevin de Jong <monkaii@hotmail.com>
+# SPDX-License-Identifier: MIT
+
+# An order or a dependency given as a bare name tells a newcomer nothing: "Do this after export-csv." or "Blocked by
+# #12." Say what the other item is, then keep the name in brackets: "Do this after the CSV export (export-csv)."
+# plan-me fills in the reference patterns, and on an import the ids of the items being imported.
+extends: existence
+message: "'%s' names another item without saying what it is: say it in your own words, the name in brackets."
+level: warning
+nonword: true
+tokens:
+  - '\b(?:[Aa]fter|[Bb]efore|[Bb]locked by|[Dd]epends on|[Ll]ike|[Uu]nlike|[Ff]ollows|[Rr]eplaces)\s+(?:REFERENCE)(?!\s*[(:—–])'

@@ -5,6 +5,7 @@
 
 import { Backlog, FieldValues } from "./backlog";
 import { componentLabel, SelectField } from "./config";
+import { checkIssue, IssueCheckOptions, IssueReport, problemLines, skeletonFor } from "./issue-check";
 import { Item } from "./item";
 import { COMPONENT_HEADING, parseFormAnswers } from "./templates";
 
@@ -172,4 +173,71 @@ export async function onIssueOpened(backlog: Backlog, number: number): Promise<s
     lines.push(`#${number} needs-decision`);
   }
   return lines;
+}
+
+/** The hidden marker of plan-me's issue-check comment: one per issue, updated in place. */
+export const CHECK_COMMENT_MARKER = "<!-- plan-me:issue-check -->";
+
+/** The text of the issue-check comment: the problems and how to fix them, or that they are resolved. */
+export function checkComment(report: IssueReport | undefined, type: string | undefined): string {
+  if (!report) {
+    return `${CHECK_COMMENT_MARKER}\n**plan-me issue check: resolved.** The issue now passes the check.\n`;
+  }
+  const errors = problemLines(report).filter(l => l.includes(" error: "));
+  const warnings = problemLines(report).filter(l => l.includes(" warning: "));
+  const list = (lines: string[]): string => lines.map(l => `- ${l}`).join("\n");
+  const parts = [
+    CHECK_COMMENT_MARKER,
+    `**plan-me issue check:** ${report.errors} error(s), ${report.warnings} warning(s). ` +
+      "Edit the issue to fix them; this comment follows the edits.",
+  ];
+  if (errors.length > 0) parts.push(`**Errors** (the issue is not understandable on its own yet):\n${list(errors)}`);
+  if (warnings.length > 0) parts.push(`**Warnings:**\n${list(warnings)}`);
+  if (report.errors > 0 && type) {
+    parts.push(`A ${type} issue has these sections:\n\n\`\`\`markdown\n${skeletonFor(type)}\n\`\`\``);
+  }
+  return `${parts.join("\n\n")}\n`;
+}
+
+/** What the issue check of an issue event found, and what it changed. */
+export interface IssueCheckOutcome {
+  report: IssueReport;
+  lines: string[];
+}
+
+/**
+ * An issue was opened or edited: runs the issue check on its title, type and body. Problems (errors or warnings):
+ * one comment listing them (created once, then updated in place on later edits) and the label, when one is given.
+ * Once the issue passes, the comment says the problems are resolved and the label is removed. Idempotent.
+ */
+export async function onIssueText(
+  backlog: Backlog,
+  number: number,
+  options: IssueCheckOptions & { label?: string }
+): Promise<IssueCheckOutcome> {
+  const item = await backlog.show(number);
+  const report = await checkIssue({ title: item.title, type: item.type, body: item.body }, backlog.config, options);
+  const lines: string[] = [];
+  const failing = report.errors > 0 || report.warnings > 0;
+  const comments = await backlog.api.listComments(number);
+  const mine = comments.find(c => c.body.includes(CHECK_COMMENT_MARKER));
+  const text = checkComment(failing ? report : undefined, item.type);
+  if (mine && mine.body !== text) {
+    await backlog.api.updateComment(mine.id, text);
+    lines.push(`#${number} issue check comment ${failing ? "updated" : "resolved"}`);
+  } else if (!mine && failing) {
+    await backlog.api.comment(number, text);
+    lines.push(`#${number} issue check comment`);
+  }
+  if (options.label) {
+    const has = item.labels.includes(options.label);
+    if (report.errors > 0 && !has) {
+      await backlog.api.addLabels(number, [options.label]);
+      lines.push(`#${number} label ${options.label}`);
+    } else if (report.errors === 0 && has) {
+      await backlog.api.removeLabel(number, options.label);
+      lines.push(`#${number} label ${options.label} removed`);
+    }
+  }
+  return { report, lines };
 }

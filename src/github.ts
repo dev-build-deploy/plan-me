@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { Features, FieldSpec, Link, NewIssue, PlanApi, RawIssue } from "./api";
+import { Features, FieldSpec, IssueComment, IssueUpdate, Link, NewIssue, PlanApi, RawIssue } from "./api";
 import { BoardConfig, LabelConfig } from "./config";
 
 /** The two Octokit calls plan-me uses (satisfied by `@actions/github`'s getOctokit and by test mocks). */
@@ -229,6 +229,55 @@ export class GitHubApi implements PlanApi {
       owner: this.owner,
       repo: this.repo,
       issue_number: number,
+      body,
+    });
+  }
+
+  async updateIssue(number: number, update: IssueUpdate): Promise<void> {
+    await this.octokit.request("PATCH /repos/{owner}/{repo}/issues/{issue_number}", {
+      owner: this.owner,
+      repo: this.repo,
+      issue_number: number,
+      ...(update.title !== undefined ? { title: update.title } : {}),
+      ...(update.body !== undefined ? { body: update.body } : {}),
+      ...(update.issueType !== undefined ? { type: update.issueType } : {}),
+    });
+  }
+
+  async removeLabel(number: number, label: string): Promise<void> {
+    try {
+      await this.octokit.request("DELETE /repos/{owner}/{repo}/issues/{issue_number}/labels/{name}", {
+        owner: this.owner,
+        repo: this.repo,
+        issue_number: number,
+        name: label,
+      });
+    } catch (e) {
+      if ((e as { status?: number }).status !== 404) throw e;
+    }
+  }
+
+  async listComments(number: number): Promise<IssueComment[]> {
+    const out: IssueComment[] = [];
+    for (let page = 1; ; page++) {
+      const { data } = await this.octokit.request("GET /repos/{owner}/{repo}/issues/{issue_number}/comments", {
+        owner: this.owner,
+        repo: this.repo,
+        issue_number: number,
+        per_page: 100,
+        page,
+      });
+      const list = data as { id: number; body?: string | null }[];
+      out.push(...list.map(c => ({ id: c.id, body: c.body ?? "" })));
+      if (list.length < 100) return out;
+    }
+  }
+
+  async updateComment(id: number, body: string): Promise<void> {
+    await this.octokit.request("PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}", {
+      owner: this.owner,
+      repo: this.repo,
+      comment_id: id,
       body,
     });
   }

@@ -6,7 +6,7 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 
-import { onIssueClosed, onIssueOpened, onPullRequest, sweep } from "../automation";
+import { onIssueClosed, onIssueOpened, onIssueText, onPullRequest, sweep } from "../automation";
 import { Backlog } from "../backlog";
 import { checkClaudeSettings } from "../claude";
 import { Config, loadConfig } from "../config";
@@ -34,9 +34,33 @@ async function handle(backlog: Backlog): Promise<string[]> {
     const number: number = payload.issue.number;
     if (payload.action === "closed") return onIssueClosed(backlog, number);
     const form = payload.action === "opened" ? await onIssueOpened(backlog, number) : [];
-    return [...form, ...(await sweep(backlog, [number]))];
+    const lines = [...form, ...(await sweep(backlog, [number]))];
+    if (payload.action === "opened" || payload.action === "edited")
+      lines.push(...(await checkIssueText(backlog, number)));
+    return lines;
   }
   return sweep(backlog);
+}
+
+/**
+ * The issue check on an opened or edited issue: one error or warning annotation per problem, a comment on the issue
+ * listing them (updated in place, marked resolved once it passes), and the `issue-check-label` when set. It does not
+ * fail the run: the comment is the signal. Off with `issue-check: false`.
+ */
+async function checkIssueText(backlog: Backlog, number: number): Promise<string[]> {
+  if (core.getInput("issue-check") === "false") return [];
+  const { report, lines } = await onIssueText(backlog, number, {
+    root: workspace(),
+    label: core.getInput("issue-check-label") || undefined,
+  });
+  for (const d of report.diagnostics) {
+    const text = `#${number} line ${d.line}: [${d.rule}] ${d.message}${d.hint ? ` Fix: ${d.hint}` : ""}`;
+    if (d.level === "error") core.error(text, { title: "plan-me issue check" });
+    else core.warning(text, { title: "plan-me issue check" });
+  }
+  if (report.skipped) core.info(`plan-me: ${report.skipped}`);
+  core.info(`plan-me: issue #${number}: ${report.errors} error(s), ${report.warnings} warning(s)`);
+  return lines;
 }
 
 /** The checked-out repository. */

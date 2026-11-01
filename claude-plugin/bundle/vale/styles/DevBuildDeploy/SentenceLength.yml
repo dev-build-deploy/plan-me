@@ -1,0 +1,10 @@
+# SPDX-FileCopyrightText: 2026 Kevin de Jong <monkaii@hotmail.com>
+# SPDX-License-Identifier: MIT
+
+# A sentence over 30 words is hard to follow for a reader new to the topic. Split it.
+extends: occurrence
+message: "Keep sentences under 30 words: split this one."
+level: warning
+scope: sentence
+max: 30
+token: '[^\s]+'

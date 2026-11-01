@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: 2026 Kevin de Jong <monkaii@hotmail.com>
+# SPDX-License-Identifier: MIT
+
+# Words that weaken a claim without adding facts. Inspired by the write-good package for Vale (MIT); the list is our own.
+extends: existence
+message: "'%s' weakens the sentence: give the fact or the number instead."
+level: warning
+ignorecase: true
+tokens:
+  - very
+  - really
+  - extremely
+  - quite
+  - fairly
+  - basically
+  - simply
+  - obviously
+  - clearly
+  - just

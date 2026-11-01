@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: 2026 Kevin de Jong <monkaii@hotmail.com>
+# SPDX-License-Identifier: MIT
+
+# Long phrases with a short, plain equivalent. Inspired by the write-good package for Vale (MIT); the list is our own.
+extends: substitution
+message: "Use '%s' instead of '%s'."
+level: warning
+ignorecase: true
+swap:
+  in order to: to
+  due to the fact that: because
+  at this point in time: now
+  in the event that: if
+  a large number of: many
+  is able to: can
+  make use of: use
+  prior to: before
+  with regard to: about
+  for the purpose of: to
