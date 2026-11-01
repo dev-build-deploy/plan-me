@@ -50697,8 +50697,8 @@ function mapComponent(config, areas, fallback) {
     return fallback;
 }
 /**
- * A short title from free text: up to the first sentence end (or a colon after at least TITLE_MIN_CLAUSE
- * characters), outside brackets and quotes, cut at a word boundary.
+ * A short title from free text: up to the first sentence end (`.`, or `?` and `!`, which stay; or a colon after at
+ * least TITLE_MIN_CLAUSE characters), outside brackets and quotes, cut at a word boundary.
  */
 function shortTitle(text) {
     let depth = 0;
@@ -50712,9 +50712,9 @@ function shortTitle(text) {
             depth = Math.max(0, depth - 1);
         else if (c === '"')
             quoted = !quoted;
-        const breaks = text[i + 1] === " " && (c === "." || (c === ":" && i >= TITLE_MIN_CLAUSE));
+        const breaks = text[i + 1] === " " && (".?!".includes(c) || (c === ":" && i >= TITLE_MIN_CLAUSE));
         if (breaks && depth === 0 && !quoted) {
-            end = i;
+            end = "?!".includes(c) ? i + 1 : i;
             break;
         }
     }
@@ -50765,59 +50765,172 @@ function readItemFolder(config, dir, options = {}) {
     }
     return records;
 }
+/** A separator between a line-list item's id (or its meta, or a status phrase) and its text. */
+const SEPARATOR = /^[·:.–—-]\s*/;
+/** Further ids joined to a line-list item's id: `+ **other-id**`. */
+const JOINED_IDS = /^(?:\+\s*\*\*[\w.-]+\*\*\s*)+/;
+/** An id named in a line list's text (no trailing dot, so a sentence end is not part of it). */
+const NAMED_ID = String.raw `[\w-]+(?:\.[\w-]+)*`;
+/** A list of named ids: `a`, `a, b`, `a and b`. */
+const NAMED_IDS = String.raw `${NAMED_ID}(?:\s*(?:,|\band\b)\s*${NAMED_ID})*`;
+/** The leading status phrases of a line-list item, and the status each one sets. */
+const STATUS_PHRASES = [
+    [/^In progress\b/i, "in-progress"],
+    [/^Needs (?:a )?decision\b/i, "needs-decision"],
+    // "Blocked by ..." up to its sentence end or colon (a dot inside a name, as in `v2.1`, does not end it)
+    [/^Blocked\b(?:\s+by\s(?:[^.:]|\.(?=\S))*)?/i, "blocked"],
+];
+/** The status a leading phrase sets ("In progress", "Needs a decision", "Blocked by x"), and the text after it. */
+function leadingStatus(text) {
+    for (const [phrase, status] of STATUS_PHRASES) {
+        const m = phrase.exec(text);
+        if (m)
+            return { status, rest: skipLead(text.slice(m[0].length)) };
+    }
+    return { rest: text };
+}
+/** The start of a leading `After <id>[, <id>] (...):` clause: the items this one comes after. */
+const AFTER_CLAUSE = new RegExp(String.raw `^After\s+(${NAMED_IDS})`, "i");
+/** `After <id>` anywhere in the text (only known ids count: "after" is a common word). */
+const AFTER_PHRASE = new RegExp(String.raw `\bAfter\s+(${NAMED_IDS})`, "gi");
+/** `Blocked by <id>[, <id>]` or `Depends on <id>[, <id>]` anywhere in the text. */
+const DEPENDENCY_PHRASE = new RegExp(String.raw `\b(?:Blocked by|Depends on)\s+(${NAMED_IDS})`, "gi");
+/** The names in a list of named ids (`a, b and c`). */
+function splitNames(list) {
+    return list.split(/\s*(?:,|\band\b)\s*/).filter(Boolean);
+}
+/** Whether a name reads as an item id (`export-csv`, `v2.1`) rather than a plain word ("the", "design"). */
+function looksLikeId(name) {
+    return /[-_.\d]/.test(name);
+}
 /**
- * Adapter (b): a markdown line list. `## P1` headings set the priority; `- **id** · text. Helper: role.` starts an
- * item (indented lines continue it); `- ~~id~~ done ...` is a done item; text starting "In progress" is in-progress.
+ * A leading `After <id>[, <id>]:` clause (a `(...)` group may come before the colon): its names, and the text
+ * without it (the next word capitalised). A clause naming no id (`After lunch:`) is plain text.
+ */
+function afterClause(text, known) {
+    const after = AFTER_CLAUSE.exec(text);
+    if (!after)
+        return { names: [], rest: text };
+    const tail = skipMeta(text.slice(after[0].length).trim()).trim();
+    const names = splitNames(after[1]);
+    if (!tail.startsWith(":") || !names.some(n => known.has(n) || looksLikeId(n)))
+        return { names: [], rest: text };
+    const rest = tail.slice(1).trim();
+    return { names, rest: rest.charAt(0).toUpperCase() + rest.slice(1) };
+}
+/**
+ * The dependencies among the names: the known ids (those defined in the same file), the item's own id left out. An
+ * unknown name that looks like an id is a warning, a plain word ("the new API") is ignored.
+ */
+function resolveNames(id, names, known) {
+    const dependsOn = [];
+    const warnings = [];
+    for (const name of new Set(names)) {
+        if (name === id)
+            continue;
+        if (known.has(name))
+            dependsOn.push(name);
+        else if (looksLikeId(name))
+            warnings.push(`depends on "${name}", not an item in this file`);
+    }
+    return { dependsOn, warnings };
+}
+/** The text after a leading balanced `(...)` group (brackets may nest); the text itself when there is none. */
+function skipMeta(text) {
+    if (!text.startsWith("("))
+        return text;
+    let depth = 0;
+    for (let i = 0; i < text.length; i++) {
+        if (text[i] === "(")
+            depth++;
+        else if (text[i] === ")" && --depth === 0)
+            return text.slice(i + 1);
+    }
+    return text;
+}
+/** The text without a leading `(meta)` group and the separator after it. */
+function skipLead(text) {
+    return skipMeta(text.trim()).trim().replace(SEPARATOR, "").trim();
+}
+/** An item's own priority: a leading priority option (`P3 · text`, `P3 (meta): text`), and the text after it. */
+function leadingPriority(text, priorities) {
+    const m = /^([\w-]+)(?=[\s(·:.–—-]|$)/.exec(text);
+    if (!m || !priorities.includes(m[1]))
+        return { rest: text };
+    return { priority: m[1], rest: skipLead(text.slice(m[0].length)) };
+}
+/**
+ * The record for a line-list item; `known` are the ids defined in the same file, `priorities` the configured
+ * priority options (a leading one overrides the section's priority).
+ */
+function lineRecord(item, known, priorities, file, options) {
+    const body = item.text.join(" ").replace(/\s+/g, " ").trim().replace(SEPARATOR, "");
+    const own = leadingPriority(skipLead(body.replace(JOINED_IDS, "").replace(/^done\b/i, "")), priorities);
+    const text = own.rest;
+    const { status, rest } = leadingStatus(text);
+    const after = afterClause(rest, known);
+    const phrases = [...text.matchAll(DEPENDENCY_PHRASE)].flatMap(m => splitNames(m[1]));
+    const later = [...text.matchAll(AFTER_PHRASE)].flatMap(m => splitNames(m[1])).filter(n => known.has(n));
+    const deps = resolveNames(item.id, [...after.names, ...phrases, ...later], known);
+    return {
+        id: item.id,
+        title: shortTitle(after.rest || item.id),
+        body,
+        status: item.done ? "done" : (status ?? "open"),
+        priority: own.priority ?? item.priority,
+        component: options.component,
+        role: /Helper: ([\w-]+)\.?\s*$/.exec(text)?.[1],
+        dependsOn: deps.dependsOn,
+        warnings: deps.warnings,
+        design: [],
+        source: file,
+    };
+}
+/**
+ * Adapter (b): a markdown line list. `## P1` headings set the priority (a leading `P3 ·` in an item's text overrides
+ * it, left out of the title); a `## Done` heading marks the items under it
+ * done (until the next priority heading); `- **id** · text. Helper: role.` starts an item (indented lines continue
+ * it). After the id may come joined ids (`+ **other-id**`, the first id is the item), a balanced `(meta)` group
+ * (kept in the body, not the title) and a `·`, `-` or `:` separator. `- ~~id~~ done ...` is a done item. A leading
+ * "In progress", "Needs (a) decision" or "Blocked (by x)" sets the status and is left out of the title, as is a
+ * leading `After <id>[, <id>] (...):` clause. Dependencies: the ids defined in the same file named in that clause
+ * or after "Blocked by" / "Depends on" (an unknown id is a warning), or after "After" anywhere else (known ids only).
  */
 function readLineList(config, file, options = {}) {
-    const records = [];
+    const items = [];
     const priorities = Object.keys(config.fields.priority.options);
     let priority;
+    let doneSection = false;
     let current;
-    const flush = () => {
-        if (!current)
-            return;
-        const text = current.text.join(" ").replace(/\s+/g, " ").trim();
-        const role = /Helper: ([\w-]+)\.?\s*$/.exec(text)?.[1];
-        const inProgress = /^In progress\b/i.test(text);
-        const titleText = text.replace(/^In progress(?: \([^)]*\))?\.?\s*/i, "").replace(/^done\s*/i, "");
-        records.push({
-            id: current.id,
-            title: shortTitle(titleText.replace(/^\([^)]*\):?\s*/, "") || current.id),
-            body: text,
-            status: current.done ? "done" : inProgress ? "in-progress" : "open",
-            priority: current.priority,
-            component: options.component,
-            role,
-            dependsOn: [],
-            design: [],
-            source: file,
-        });
-        current = undefined;
-    };
     for (const line of fs_1.default.readFileSync(file, "utf8").split(/\r?\n/)) {
         const heading = /^##\s+(\S+)/.exec(line);
         if (heading) {
-            flush();
-            priority = priorities.includes(heading[1]) ? heading[1] : priority;
+            current = undefined;
+            if (priorities.includes(heading[1])) {
+                priority = heading[1];
+                doneSection = false;
+            }
+            else if (/^done\b/i.test(heading[1])) {
+                doneSection = true;
+            }
             continue;
         }
-        const open = /^- \*\*([\w.-]+)\*\*\s*·?\s*(.*)$/.exec(line);
+        const open = /^- \*\*([\w.-]+)\*\*\s*(.*)$/.exec(line);
         const done = /^- ~~([\w.-]+)~~\s*(.*)$/.exec(line);
         if (open || done) {
-            flush();
             const m = (open ?? done);
-            current = { id: m[1], text: [m[2]], done: !!done, priority };
+            current = { id: m[1], text: [m[2]], done: !!done || doneSection, priority };
+            items.push(current);
         }
         else if (current && /^\s+\S/.test(line)) {
             current.text.push(line.trim());
         }
         else if (line.trim() === "" || /^\S/.test(line)) {
-            flush();
+            current = undefined;
         }
     }
-    flush();
-    return records;
+    const known = new Set(items.map(i => i.id));
+    return items.map(item => lineRecord(item, known, priorities, file, options));
 }
 /**
  * Creates the issues for the records (idempotent through the hidden id marker), then resolves parents and
@@ -50871,6 +50984,8 @@ async function runImport(backlog, records, options = {}) {
         }
     }
     for (const r of wanted) {
+        for (const warning of r.warnings ?? [])
+            lines.push(`warn ${r.id}: ${warning}`);
         const number = existing.get(r.id);
         const links = [
             ...(r.parent ? [["parent", r.parent]] : []),

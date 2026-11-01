@@ -113,7 +113,9 @@ decision" -> needs-decision, "Blocked" or "Blocked by <id>" -> blocked. `- ~~id~
 so is every item under a `## Done` heading (up to the next `## P*`).
 
 Dependencies in a line list are the ids **defined in the same file** named in a leading `After <id>[, <id>]:` clause
-(left out of the title) or after "Blocked by" / "Depends on" (`a, b` or `a and b`). An unknown name that looks like an
-id (`export-html`) is a `warn` line in the plan, not a dependency; a plain word ("Depends on the new API") is ignored.
+(a `(...)` group may come before the colon; the clause is left out of the title) or after "Blocked by" / "Depends on"
+(`a, b` or `a and b`). An unknown name there that looks like an id (`export-html`) is a `warn` line in the plan, not a
+dependency; a plain word ("Depends on the new API") is ignored. "After <id>" anywhere else in the text (`... After
+export-csv.`) counts only for known ids, without warnings ("after" is a common word).
 
 Done items are skipped by default; `--done closed` imports them as closed issues.

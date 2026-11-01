@@ -188,6 +188,26 @@ describe("adapters", () => {
     ]);
   });
 
+  test("line list: After anywhere", () => {
+    const dir = tmp({
+      "backlog.md": [
+        "## P1",
+        "- **export-csv** · Export the report as CSV.",
+        "- **export-pdf** · The report as PDF, the most used first. After export-csv. Helper: backend.",
+        "- **export-xls** · After export-csv (if the owner keeps it): the report as a spreadsheet.",
+        "- **share-link** · A link to the report. After export-html, or after lunch.",
+      ].join("\n"),
+    });
+    const records = readLineList(CONFIG, path.join(dir, "backlog.md"));
+    expect(records.map(r => [r.id, r.title, r.dependsOn, r.warnings])).toEqual([
+      ["export-csv", "Export the report as CSV", [], []],
+      ["export-pdf", "The report as PDF, the most used first", ["export-csv"], []],
+      ["export-xls", "The report as a spreadsheet", ["export-csv"], []],
+      ["share-link", "A link to the report", [], []],
+    ]);
+    expect(records[1].role).toBe("backend");
+  });
+
   test("short titles", () => {
     expect(shortTitle("x".repeat(150)).length).toBeLessThanOrEqual(101);
     expect(shortTitle("One. Two.")).toBe("One");
