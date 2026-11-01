@@ -11,9 +11,11 @@ import { z } from "zod";
 
 import { Backlog } from "./backlog";
 import { CommandSpec, COMMANDS } from "./commands";
+import { VERSION } from "./version";
 
 /** The server version reported to MCP clients. */
-export const MCP_VERSION = "0.1.0";
+/** The MCP server reports the package version. */
+export const MCP_VERSION = VERSION;
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
