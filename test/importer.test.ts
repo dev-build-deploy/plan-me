@@ -116,9 +116,31 @@ describe("adapters", () => {
     expect(records[4].body).toBe("A dark theme.");
   });
 
+  test("line list: status phrases", () => {
+    const dir = tmp({
+      "backlog.md": [
+        "## P1",
+        "- **pricing-tiers** · Needs a decision. Two tiers or three? Helper: designer.",
+        "- **pricing-page** · Needs decision: Which plan is the default.",
+        "- **export-pdf** · Blocked. The PDF library is not chosen.",
+        "- **export-xls** · Blocked by export-pdf, pricing-page. The same report as a spreadsheet.",
+        "- **sync-notes** · In progress (branch feat/sync). Notes sync between devices.",
+      ].join("\n"),
+    });
+    const records = readLineList(CONFIG, path.join(dir, "backlog.md"));
+    expect(records.map(r => [r.id, r.status, r.title])).toEqual([
+      ["pricing-tiers", "needs-decision", "Two tiers or three?"],
+      ["pricing-page", "needs-decision", "Which plan is the default"],
+      ["export-pdf", "blocked", "The PDF library is not chosen"],
+      ["export-xls", "blocked", "The same report as a spreadsheet"],
+      ["sync-notes", "in-progress", "Notes sync between devices"],
+    ]);
+  });
+
   test("short titles", () => {
     expect(shortTitle("x".repeat(150)).length).toBeLessThanOrEqual(101);
     expect(shortTitle("One. Two.")).toBe("One");
+    expect(shortTitle("One? Two.")).toBe("One?");
   });
 });
 
