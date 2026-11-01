@@ -163,7 +163,8 @@ export function readItemFolder(config: Config, dir: string, options: ImportOptio
     const type = mapType(config, asString(data.type));
     const body = [
       sectionHeadings(content.replace(/^\s*#\s+.*\r?\n/, "").trim(), type),
-      decisions ? `Decisions: ${decisions}` : "",
+      // Said in words, so the issue check's bare-reference rule (a reference with nothing saying what it is) passes.
+      decisions ? `Decisions this item carries (numbered, in the decisions index): ${decisions}` : "",
       asString(data.owner) ? `Owner: ${asString(data.owner)}` : "",
     ]
       .filter(Boolean)

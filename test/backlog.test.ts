@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+import { askBody } from "../src/backlog";
 import { resolveConfig } from "../src/config";
 
 import { CONFIG, setup } from "./fake";
@@ -169,5 +170,16 @@ describe("next, list and snapshot", () => {
     );
     expect(first).not.toContain("create label type:feature");
     expect(await backlog.init(false)).toEqual([]);
+  });
+});
+
+describe("askBody", () => {
+  test("a new question gets the Decision sections, the question under What", () => {
+    const body = askBody("Decision", "Two pricing tiers or three?") ?? "";
+    expect(body).toMatch(/^### Why\n\n<!--/);
+    expect(body).toContain("### What\n\nTwo pricing tiers or three?\n\n### Options");
+    expect(body).toContain("### Who decides");
+    expect(askBody(undefined, "Two or three?")).toBe("Two or three?");
+    expect(askBody("Decision", undefined)).toContain("### What\n\n<!--");
   });
 });
