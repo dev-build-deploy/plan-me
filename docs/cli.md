@@ -22,8 +22,8 @@ $ plan-me --help
 | `-r, --repo <owner/name>` | Overrides the configured repository |
 | `--json` | JSON instead of compact text, for every command |
 
-The decision commands (`decide` with `--title`, `decisions ...`) work on the files under the current directory and
-need no configuration or token, except `decide --question`.
+The decision commands (`decide`, `decisions ...`) work on the files under the current directory and need no
+configuration or token, except `decide --question`.
 
 An item reference (`<ref>`) is `12`, `#12`, or the id from an item's hidden marker (`<!-- plan-me:id=walk-rocks -->`,
 set by `new --id` and `import`).
@@ -36,10 +36,12 @@ set by `new --id` and `import`).
 | `new <title> [--body t] [--type T] [--priority P] [--component c] [--role r] [--size s] [--parent ref] [--blocked-by ref]... [--design path]... [--id id]` | Creates an item: labels, issue type, board fields, sub-issue of its epic, dependencies (status blocked while a blocker is open), design doc links in the body. With `--id` it is idempotent. |
 | `start <ref> [--branch b]` | Status in-progress; the branch as a `Branch: b` line in the body. |
 | `block <ref> --by <ref>` | A "blocked by" dependency; status blocked while the blocker is open. |
-| `decide <ref> [--question t]` | Asking: status needs-decision; the question as a comment. |
-| `decide <text> --title t --by b [--summary s] [--scope a]... [--question ref] [--supersedes id] [--amends id] [--date d] [--id id]` | Recording (`--title` switches to it): writes `docs/decisions/<date>-<id>.md` and regenerates `docs/decisions.md`; with `--question`, that issue gets the answer, the file's path and status in-progress. See [decisions.md](./decisions.md). |
+| `ask <ref\|title> [question]` | Opens a question: an issue (`12`, `#12`, an id) becomes needs-decision with the question as a comment; any other text is a new question issue's title (needs-decision, the question as its body; idempotent). |
+| `decide <text> --title t --by b [--summary s] [--scope a]... [--question ref] [--supersedes id] [--amends id] [--date d] [--id id]` | Records a decision: writes `docs/decisions/<date>-<id>.md` and regenerates `docs/decisions.md`; with `--question` (an issue), that issue gets the answer, the file's path and status in-progress. See [decisions.md](./decisions.md). The old `decide <ref> [--question "<text>"]` (no `--title`) still asks, with a deprecation warning. |
 | `decisions index` | Regenerates `docs/decisions.md` from `docs/decisions/`. |
 | `decisions check` | One line per problem and exit code 1: invalid front matter, colliding ids or numbers, a dangling `superseded_by`, a stale or hand-edited index. |
+| `decisions install [--command c]` | Sets up the merge driver for `docs/decisions.md`: a `.gitattributes` line and this clone's git config. Once per clone. |
+| `decisions merge-driver <base> <ours> <theirs>` | Git's merge driver (git runs it): merges the decisions both indexes list and writes the index again. |
 | `decisions import <file> --format numbered\|labelled [--by b] [--scope a]... [--dry-run]` | Converts an old numbered list into decision files, keeping the numbers; rerunnable. |
 | `done <ref> [--note t]` | A **Done.** comment with the note, closed (completed), status done. |
 | `next [filters] [--limit n]` | The next item(s): open, unblocked, not an epic; P1 before P2 before P3; within a priority in-progress, then needs-decision, then open; then by number. |

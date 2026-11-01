@@ -69,12 +69,22 @@ Every repository using plan-me keeps its decisions the same way, with no configu
 - **A generated index**: `docs/decisions.md`, one greppable line per decision, current first, then amended, then
   superseded (marked with what replaces them, so nobody follows them). Never edited by hand; deterministic, so it
   diffs cleanly.
-- **Commands**: `plan-me decide "<text>" --title ... --by ... [--question 42] [--supersedes <id>]` records one;
+- **Commands**: `plan-me ask <ref|title> "<question>"` opens a question (needs-decision);
+  `plan-me decide "<text>" --title ... --by ... [--question 42] [--supersedes <id>]` records a decision;
   `plan-me decisions index` regenerates the index; `plan-me decisions check` fails on invalid files, colliding ids,
   a dangling `superseded_by` or a stale index (the Action and the `plan-me-decisions` pre-commit hook run it);
   `plan-me decisions import <file> --format numbered|labelled` converts an old numbered list, keeping its numbers.
 - **Questions**: a needs-decision issue gets the answer and the file's path from `decide --question`; the pull
   request carrying the file closes it (`Closes #42`).
+- **No index conflicts**: a git merge driver regenerates `docs/decisions.md` when branches are merged.
+- **Licence headers**: with a `.reuse-me.json`, every decision file gets an SPDX header from its matching rule.
+
+**Once per clone**, set up the merge driver (it adds a line to `.gitattributes`, which you commit once, and the driver
+to the clone's git configuration, which git never shares):
+
+```sh
+plan-me decisions install
+```
 
 ```sh
 $ plan-me decide "Scripts are Lua." --title "Lua is the script language" --by "the user" --question 42
