@@ -17,12 +17,17 @@ TypeScript SDK). It exposes the CLI's commands as tools, with the same behaviour
 | `new` | title, body, type, priority, component, role, size, parent, blockedBy, design, id | yes |
 | `start` | ref, branch | yes |
 | `block` | ref, by | yes |
-| `decide` | ref, question | yes |
+| `decide` | asking: ref, question; recording: text, title, by, summary, scope, question, supersedes, amends, date, id | yes |
+| `decisions_index` | (none) | yes |
+| `decisions_check` | (none) | no |
+| `decisions_import` | file, format, by, scope, dryRun | yes |
 | `done` | ref, note | yes |
 
 `ref` is a number, `#n` or a marker id. Every tool also takes `json: true` to answer with the JSON the CLI's `--json`
 prints; by default it answers with the compact text (one line per item). Read-only tools carry `readOnlyHint`, all
-carry `idempotentHint`. Errors come back as a tool error (`isError`) with one line of text.
+carry `idempotentHint`. Errors come back as a tool error (`isError`) with one line of text; a failing
+`decisions_check` too, with one line per problem. The decision tools work on the files under the server's working
+directory ([decisions.md](./decisions.md)).
 
 ## Configuration
 
