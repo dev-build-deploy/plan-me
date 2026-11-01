@@ -48,6 +48,8 @@ export interface Config {
   epicType: string;
   labels: LabelConfig[];
   branchPattern: string;
+  /** The plan-me versions this repository works with (a semver range); the CLI warns when it doesn't satisfy it. */
+  version?: string;
 }
 
 /** The configuration file name looked up in the working directory. */
@@ -79,6 +81,7 @@ type RawConfig = {
   epicType?: string;
   labels?: (string | LabelConfig)[];
   branchPattern?: string;
+  version?: string;
 };
 
 function toOptions(raw: Record<string, string> | string[] | undefined, fallback: string[]): Record<string, string> {
@@ -131,6 +134,7 @@ export function resolveConfig(raw: RawConfig, repository?: string): Config {
     epicType: raw.epicType ?? "Epic",
     labels,
     branchPattern: raw.branchPattern ?? DEFAULT_BRANCH_PATTERN,
+    version: raw.version,
   };
 }
 

@@ -7,12 +7,25 @@ SPDX-License-Identifier: MIT
 
 ## Installation instructions
 
-A pre-compiled version of the CLI is part of this repository:
+A pre-compiled version of the CLI is part of this repository. Install a release, pinned to its tag, so everyone
+working on a repository (people, CI, agents in worktrees) runs the same plan-me:
 
 ```sh
-$ npm install -g https://github.com/dev-build-deploy/plan-me
-$ plan-me --help
+$ npm install -g https://github.com/dev-build-deploy/plan-me/archive/refs/tags/v0.3.0.tar.gz
+$ plan-me --version
+0.3.0
 ```
+
+Use the release's tarball for a global install: npm's global install from a git URL
+(`npm install -g github:dev-build-deploy/plan-me#v0.3.0`) can leave a link to a deleted temporary clone. As a
+project dependency the git URL works (`npm install -D github:dev-build-deploy/plan-me#v0.3.0`, then
+`npx plan-me ...`). The default branch (`npm install -g https://github.com/dev-build-deploy/plan-me`) is the
+newest, unreleased state.
+
+`plan-me --version` prints the version (`--json --version`: `{"version": "0.3.0"}`), for hooks and setup scripts
+that compare it to the version a repository wants. A repository can name that version in its configuration
+(`"version": ">=0.3.0"`, see [config.md](./config.md)); every command then warns on stderr when the installed
+plan-me does not satisfy it, with the install command for the wanted release.
 
 ## Global options
 
@@ -21,6 +34,7 @@ $ plan-me --help
 | `-c, --config <file>` | The configuration file (default `.plan-me.json`, see [config.md](./config.md)) |
 | `-r, --repo <owner/name>` | Overrides the configured repository |
 | `--json` | JSON instead of compact text, for every command |
+| `-V, --version` | Prints the version (with `--json` as `{"version": ...}`) |
 
 The decision commands (`decide`, `decisions ...`) work on the files under the current directory and need no
 configuration or token, except `decide --question`.

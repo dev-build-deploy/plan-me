@@ -11,6 +11,7 @@ import { Backlog } from "../backlog";
 import { loadConfig } from "../config";
 import { checkDecisions } from "../decisions";
 import { GitHubApi, OctokitLike } from "../github";
+import { versionWarning } from "../version";
 
 type PullRequestPayload = { number: number; merged?: boolean; body?: string | null; head: { ref: string } };
 
@@ -55,6 +56,8 @@ async function run(): Promise<void> {
   const decisionsClean = checkDecisionFiles();
   try {
     const config = loadConfig(core.getInput("config") || undefined, process.env.GITHUB_REPOSITORY);
+    const warning = versionWarning(config.version);
+    if (warning) core.warning(warning.replace(/^warning: /, ""));
     const octokit = github.getOctokit(core.getInput("token", { required: true })) as unknown as OctokitLike;
     const backlog = new Backlog(new GitHubApi(octokit, config.repository, config.owner), config);
     const lines = await handle(backlog);

@@ -18,8 +18,9 @@ import { DEFAULT_DRIVER_COMMAND, installMergeDriver, runMergeDriver } from "../d
 import { GitHubApi, OctokitLike } from "../github";
 import { readItemFolder, readLineList, runImport } from "../importer";
 import { runMcpServer } from "../mcp";
+import { configVersionWarning, VERSION } from "../version";
 
-type Globals = { config: string; repo?: string; json?: boolean };
+type Globals = { config: string; repo?: string; json?: boolean; version?: boolean };
 
 /** The token: GITHUB_TOKEN, GH_TOKEN, or the GitHub CLI's (`gh auth token`). */
 function token(): string {
@@ -68,7 +69,19 @@ program
   .description("Deterministic GitHub backlog management (Issues + Projects v2) for humans and LLMs")
   .option("-c, --config <file>", "The configuration file", CONFIG_FILE)
   .option("-r, --repo <owner/name>", "The repository (overrides the configuration)")
-  .option("--json", "Print JSON instead of compact text");
+  .option("--json", "Print JSON instead of compact text")
+  .option("-V, --version", 'Print the version (with --json: {"version": ...})')
+  .action((opts: Globals, cmd: Command) => {
+    if (cmd.args.length > 0) return cmd.error(`error: unknown command '${cmd.args[0]}'`);
+    if (!opts.version) return cmd.help({ error: true });
+    print(opts, VERSION, { version: VERSION });
+  })
+  .hook("preAction", (_program: Command, action: Command) => {
+    // A repository can ask for a plan-me version in its configuration (`version`, a semver range).
+    if (action === program) return;
+    const warning = configVersionWarning(action.optsWithGlobals<Globals>().config);
+    if (warning) process.stderr.write(`${warning}\n`);
+  });
 
 function withFilters(cmd: Command): Command {
   return cmd
