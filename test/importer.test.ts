@@ -73,6 +73,25 @@ describe("adapters", () => {
     ]);
   });
 
+  test("line list: a Done section", () => {
+    const dir = tmp({
+      "backlog.md": [
+        "## P3",
+        "- **dark-mode** · A dark theme for the settings page.",
+        "## Done",
+        "- **login-timeout** · Sessions expired after 5 minutes.",
+        "## P1",
+        "- **export-csv** · Export the report as CSV.",
+      ].join("\n"),
+    });
+    const records = readLineList(CONFIG, path.join(dir, "backlog.md"));
+    expect(records.map(r => [r.id, r.status, r.priority])).toEqual([
+      ["dark-mode", "open", "P3"],
+      ["login-timeout", "done", "P3"],
+      ["export-csv", "open", "P1"],
+    ]);
+  });
+
   test("short titles", () => {
     expect(shortTitle("x".repeat(150)).length).toBeLessThanOrEqual(101);
     expect(shortTitle("One. Two.")).toBe("One");
