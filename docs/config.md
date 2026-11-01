@@ -56,6 +56,7 @@ Everything except `repository` has a default; in the Action `repository` default
 | `epicType` | `Epic` | The type `next` skips and the snapshot marks `epic`. |
 | `labels` | `[]` | Extra labels `init` creates (strings or `{name, color, description}`). |
 | `templates` | on; `blankIssues` false, `contactLinks` `[]` | The issue forms `templates` and `init` write ([cli.md](./cli.md#issue-templates)): one per type in `types`, with the `boards` and `fields`. `false` turns them off (nothing written or checked). `blankIssues`: whether the chooser also offers a blank issue; `contactLinks`: links in the chooser (`{name, url, about}`). |
+| `issueCheck` | Vale on; `.github/glossary.md` | The [issue check](./cli.md#the-issue-check). `vale`: `false` keeps only the structure rules (type, sections). `glossaryFile`: the repository's glossary (`- **term**: explanation` per line, pull-me's format). `glossary`: more terms (`{"term": "explanation"}`). `referencePatterns`: more regular expressions for references that must not stand alone (`"\\bRFC-\\d+\\b"`). |
 | `branchPattern` | `(?:^\|/)(\d+)(?=[-_/]\|$)` | The Action's regex for the issue number in a branch name (`feat/12-x`, `12-x`). |
 | `version` | none | The plan-me versions this repository works with, a semver range (`>=0.3.0`, `^0.3`). The CLI warns on stderr (the Action as a warning annotation) when it does not satisfy it, naming the release to install. Only a warning: the command still runs. |
 

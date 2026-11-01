@@ -14,6 +14,7 @@ idempotent: rerunning an event changes nothing.
 | `pull_request` closed and merged | `Closes` and branch issues: a Done comment ("Merged in #PR."), closed, status done. `Part of` issues stay in-progress. |
 | `issues` closed | Status done; dependents whose blockers are now all closed go from blocked back to open, with a comment. |
 | `issues` opened | An issue from one of plan-me's forms: its Component answer becomes the component label (unless it has one), its Priority, Role and Size answers the board fields; a Decision becomes needs-decision. Then it is kept consistent (below). |
+| `issues` opened, edited | The [issue check](./cli.md#the-issue-check) on its title, type and body (below). |
 | `issues` edited, labeled, reopened | That issue is kept consistent (below). |
 | `schedule`, `workflow_dispatch` | The whole open backlog is kept consistent. |
 
@@ -31,6 +32,29 @@ Every run also runs `claude check`: a repository with the configuration file mus
 plugin in `.claude/settings.json` (`plan-me claude install`, or `plan-me init`). Each missing setting becomes an error
 annotation and the run fails at the end, like the decisions check. There is no opt-out. See the
 [README](../README.md#claude-code-plugin).
+
+## The issue check on opened and edited issues
+
+An issue opened in the UI (a blank issue, or a form whose sections were filled with notes) is held to the same bar as
+one made with `new` or `import`: the Action runs the [issue check](./cli.md#the-issue-check) when an issue is opened
+or edited. Each finding becomes an error or warning annotation, and the issue gets **one** comment listing the
+problems and, on errors, the sections its type needs:
+
+```markdown
+**plan-me issue check:** 1 error(s), 1 warning(s). Edit the issue to fix them; this comment follows the edits.
+
+**Errors** (the issue is not understandable on its own yet):
+- line 1: error: [PI005] The "Context" section is missing. Fix: Add a "### Context" heading with its text. ...
+
+**Warnings:**
+- line 3: warning: [DevBuildDeploy.Weasel] 'very' weakens the sentence: give the fact or the number instead. ...
+```
+
+Later edits update that comment in place (it carries a hidden `<!-- plan-me:issue-check -->` marker), never a second
+one; once the issue passes, it says **resolved**. An issue that passes from the start gets no comment. With
+`issue-check-label` set, a failing issue also gets that label, removed once it passes. The check does not fail the
+run: the comment is the signal. The prose rules need Vale, which the Action downloads (pinned, checksum verified)
+on the runner; the glossary is read from the checkout. `issue-check: false` turns it off.
 
 Consistency: an issue without a Priority gets the configured default and a comment; an issue without a Status gets
 open; a blocked issue whose blockers are all closed goes back to open (with a comment). Issues whose component has no
@@ -109,6 +133,8 @@ acts as its owner and expires.
 | --- | --- | --- |
 | `token` | `github.token` | A token with Issues read/write **and Projects access**. The workflow's `GITHUB_TOKEN` cannot write organization Projects v2: use a GitHub App token ([the token](#the-token-a-github-app)) or a fine-grained personal access token. |
 | `config` | `.plan-me.json` | The configuration file ([config.md](./config.md)); `repository` defaults to the workflow's repository. |
+| `issue-check` | `true` | Check the text of opened and edited issues: annotations and one comment on the issue ([the issue check](#the-issue-check-on-opened-and-edited-issues)). `false` turns it off. |
+| `issue-check-label` | (empty) | A label added to issues that fail the issue check, removed once they pass; empty: no label. |
 
 ## Outputs
 

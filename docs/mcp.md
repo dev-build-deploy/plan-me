@@ -14,7 +14,8 @@ TypeScript SDK). It exposes the CLI's commands as tools, with the same behaviour
 | `list` | component, role, status, priority, type, parent, state | no |
 | `show` | ref | no |
 | `snapshot` | (none) | no |
-| `new` | title, body, type, priority, component, role, size, parent, blockedBy, design, id | yes |
+| `new` | title, body, type, priority, component, role, size, parent, blockedBy, design, id; the body must pass the issue check (refused with the findings otherwise; prose warnings come first in the answer) | yes |
+| `check_issue` | body, type, title: the [issue check](./cli.md#the-issue-check), a tool error on errors | no |
 | `start` | ref, branch | yes |
 | `block` | ref, by | yes |
 | `ask` | ref (an issue, or a new question's title), question | yes |
@@ -29,7 +30,8 @@ TypeScript SDK). It exposes the CLI's commands as tools, with the same behaviour
 `ref` is a number, `#n` or a marker id. Every tool also takes `json: true` to answer with the JSON the CLI's `--json`
 prints; by default it answers with the compact text (one line per item). Read-only tools carry `readOnlyHint`, all
 carry `idempotentHint`. Errors come back as a tool error (`isError`) with one line of text; a failing
-`decisions_check` and `templates_check` too, with one line per problem. The decision and template tools work on the
+`decisions_check`, `templates_check` and `check_issue` too, with one line per problem. A `new` whose body fails the
+issue check answers `error: the issue was not created: ...` with the errors and the type's sections. The decision and template tools work on the
 files under the server's working directory ([decisions.md](./decisions.md)); the template tools need the
 configuration but no token.
 

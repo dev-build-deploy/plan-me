@@ -1,6 +1,6 @@
 ---
 name: working-with-plan-me
-description: Work a backlog kept with plan-me (GitHub issues + Projects v2, decisions as files) - read it, pick the next job, start it, ask the user, record a decision, finish it. Use in any repository with a .plan-me.json, before touching an issue, a board field or docs/decisions, and after a plan-me hook denied a command.
+description: Work a backlog kept with plan-me (GitHub issues + Projects v2, decisions as files) - read it, pick the next job, write an issue that passes the issue check, start it, ask the user, record a decision, finish it. Use in any repository with a .plan-me.json, before touching an issue, a board field or docs/decisions, and after a plan-me hook denied a command.
 ---
 
 # Working with plan-me
@@ -11,7 +11,7 @@ keep the issues, the board fields and the index consistent; `gh issue create`, `
 skip the board fields, so this plugin denies them here.
 
 Every command below is also an MCP tool of this plugin's `plan-me` server (`next`, `list`, `show`, `snapshot`, `new`,
-`start`, `block`, `ask`, `decide`, `done`, `decisions_index`, `decisions_check`, `decisions_import`), with the same
+`check_issue`, `start`, `block`, `ask`, `decide`, `done`, `decisions_index`, `decisions_check`, `decisions_import`), with the same
 arguments; add `json: true` (or `--json` on the command line) for structured output. Every command is idempotent: a
 retry reports `#12 unchanged`.
 
@@ -46,14 +46,42 @@ Status goes to in-progress and the branch is noted in the issue. Put the issue n
 segment (`12-slug`, or `feat/12-slug`): the Action reads it there and moves the item along when the pull request
 opens and merges.
 
-## New work
+## New work: an issue someone else can pick up
+
+An issue is read by someone who was not there when it was written: another agent, a new colleague, you in a month.
+plan-me refuses an issue that only its author understands. Every issue has a **type** and its **sections** as
+`### <section>` headings, each with real text:
+
+| Type | Sections (required unless *in italics*) |
+| --- | --- |
+| Task | Why, Context, What, Done when |
+| Feature | Context, Problem, Expected value, Acceptance criteria, *Design docs* |
+| Bug | Context, Steps to reproduce, Observed behavior, Expected behavior, Additional context |
+| Design | Why, Context, What, *Constraints*, *Options*, *Design docs* |
+| Decision | Why, Context, What, Options, Who decides |
+| Epic | Why, Context, What, Outcome, *Child items*, *Design docs* |
+
+- **Why**: the value, for whom, and why now. **Context**: what a newcomer needs first: where it lives, what exists
+  today, what related issues or decisions say. **What**: the work, in plain words.
+- Write for a newcomer: explain every project term the first time (a term in `.github/glossary.md` must be explained
+  where it is used: "the sync engine (the part that copies notes between devices)"); never let a reference stand
+  alone ("See L99.", "after export-csv"): say what it says, and keep the reference in brackets: "after the CSV export
+  (export-csv)". Sentences under 30 words; no "very", "basically", "just".
 
 ```sh
-plan-me new "Autosave drafts" --component api --priority P2 --role backend --type Feature --parent 3 --blocked-by 9
+plan-me check-issue --skeleton --type Task > body.md      # the sections to fill in
+plan-me check-issue body.md --type Task --title "Autosave drafts"   # errors and warnings, before writing
+plan-me new "Autosave drafts" --type Task --body-file body.md --component api --priority P2 --role backend \
+  --parent 3 --blocked-by 9
 ```
 
-`--id <stable-id>` makes a re-run return the existing item instead of a duplicate. Found a blocker while working:
+`new` refuses a body with errors (no type, no sections, a required section missing or empty) and creates nothing;
+the plugin also denies it once for prose warnings: fix them, or send the same body again to keep it. `--id
+<stable-id>` makes a re-run return the existing item instead of a duplicate. Found a blocker while working:
 `plan-me block 12 --by 14`.
+
+Importing a backlog: each item file's body carries the sections (`## Why` ...); `plan-me import <dir> --dry-run`
+lists every item's problems; `--update` rewrites the issues of an earlier import that were imported as notes.
 
 ## Ask the user
 
@@ -91,4 +119,5 @@ denies both, and before `git commit` it runs `plan-me decisions check` when deci
 ## When a command is denied
 
 The deny message names the plan-me command to use instead; nothing was run. Use that command (or its MCP tool) and
-go on.
+go on. A denial from the issue check lists each finding with its line and a `Fix:`: rewrite the body (every error,
+and the warnings you agree with) and run the command again.
