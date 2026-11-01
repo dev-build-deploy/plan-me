@@ -30,3 +30,9 @@ Files: claude-plugin/.claude-plugin/plugin.json
        claude-plugin/skills/**
 Copyright: 2026 Kevin de Jong <monkaii@hotmail.com>
 License: MIT
+
+# Vale reads .ini files; reuse-me does not recognise their comments, so the SPDX header there is not seen.
+Files: vale/.vale.ini
+       claude-plugin/bundle/vale/.vale.ini
+Copyright: 2026 Kevin de Jong <monkaii@hotmail.com>
+License: MIT
