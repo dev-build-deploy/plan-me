@@ -1,6 +1,6 @@
 {
   "name": "plan-me",
-  "version": "0.0.1",
+  "version": "0.3.0",
   "private": false,
   "description": "Deterministic GitHub backlog management (Issues + Projects v2) for humans and LLMs",
   "author": "Kevin de Jong",
@@ -36,11 +36,13 @@
     "@actions/github": "^6.0.1",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "commander": "^12.1.0",
+    "semver": "^7.8.5",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",
     "@types/node": "^24.19.2",
+    "@types/semver": "^7.8.0",
     "@typescript-eslint/eslint-plugin": "^8.72.0",
     "@typescript-eslint/parser": "^8.72.0",
     "@vercel/ncc": "^0.45.0",

@@ -32,7 +32,8 @@ Everything except `repository` has a default; in the Action `repository` default
   "typeLabelPrefix": "type:",
   "epicType": "Epic",
   "labels": [{ "name": "agent-ready", "color": "0e8a16", "description": "Ready for an agent" }],
-  "branchPattern": "(?:^|/)(\\d+)(?=[-_/]|$)"
+  "branchPattern": "(?:^|/)(\\d+)(?=[-_/]|$)",
+  "version": ">=0.3.0"
 }
 ```
 
@@ -51,6 +52,7 @@ Everything except `repository` has a default; in the Action `repository` default
 | `epicType` | `Epic` | The type `next` skips and the snapshot marks `epic`. |
 | `labels` | `[]` | Extra labels `init` creates (strings or `{name, color, description}`). |
 | `branchPattern` | `(?:^\|/)(\d+)(?=[-_/]\|$)` | The Action's regex for the issue number in a branch name (`feat/12-x`, `12-x`). |
+| `version` | none | The plan-me versions this repository works with, a semver range (`>=0.3.0`, `^0.3`). The CLI warns on stderr (the Action as a warning annotation) when it does not satisfy it, naming the release to install. Only a warning: the command still runs. |
 
 Options may be given as a list (option name = key) or as a map from key to option name.
 

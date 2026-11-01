@@ -46,6 +46,18 @@ On github.com (October 2026) all three are native; the fallbacks are for GitHub 
 them. Types the organization doesn't define (e.g. Design, Decision, Epic when it only has Task/Bug/Feature) always use
 the label.
 
+## Installation
+
+Pin a release, so everyone on a repository (people, CI, agents) runs the same plan-me:
+
+```sh
+npm install -g https://github.com/dev-build-deploy/plan-me/archive/refs/tags/v0.3.0.tar.gz
+plan-me --version
+```
+
+A repository can ask for a version in `.plan-me.json` (`"version": ">=0.3.0"`); plan-me warns when it is older.
+The Action is pinned with its tag (`uses: dev-build-deploy/plan-me@v0.3.0`). Details: [docs/cli.md](./docs/cli.md).
+
 ## Using plan-me from an LLM
 
 - **Read once, grep often**: `plan-me snapshot --out backlog.txt` writes the whole open backlog, one line per item
