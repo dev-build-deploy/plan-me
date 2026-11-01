@@ -17,7 +17,8 @@ TypeScript SDK). It exposes the CLI's commands as tools, with the same behaviour
 | `new` | title, body, type, priority, component, role, size, parent, blockedBy, design, id | yes |
 | `start` | ref, branch | yes |
 | `block` | ref, by | yes |
-| `decide` | asking: ref, question; recording: text, title, by, summary, scope, question, supersedes, amends, date, id | yes |
+| `ask` | ref (an issue, or a new question's title), question | yes |
+| `decide` | text, title, by, summary, scope, question (the issue it answers), supersedes, amends, date, id; `ref` only for the deprecated asking form (answers with a warning first) | yes |
 | `decisions_index` | (none) | yes |
 | `decisions_check` | (none) | no |
 | `decisions_import` | file, format, by, scope, dryRun | yes |

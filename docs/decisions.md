@@ -85,20 +85,58 @@ Finding things: `grep " · 129 · " docs/decisions.md` finds old decision 129, `
 `grep "· current ·.*engine"` finds the current engine decisions. Then open `docs/decisions/<date>-<id>.md` for the
 full text.
 
-The index has no timestamps and no counts, so regenerating it gives the same bytes, and two branches that each add a
-decision touch different lines. If git still reports a conflict in `docs/decisions.md` after a merge, don't resolve it
-by hand: take either side and run `plan-me decisions index`. To let git merge it on its own, you can add this line to
-the repository's `.gitattributes`; the check below catches anything the union merge gets wrong:
+The index has no timestamps and no counts, so regenerating it gives the same bytes.
 
-```text
-docs/decisions.md merge=union
+## Merging branches: the merge driver
+
+Two branches that each add a decision both change `docs/decisions.md`, often at the same spot (both new lines go to
+the top of Current). A plain text merge then reports a conflict, although nothing really conflicts: the decision
+files are separate and the index can be generated again. plan-me ships a **git merge driver** for this. With it, git
+doesn't merge the index as text: it hands the three versions (the common ancestor, ours, theirs) to
+`plan-me decisions merge-driver`, which merges the decisions they list by id and writes the index again in the
+generator's exact format. Your branch's new line and theirs both end up in it, in the right order, and a status change
+on one side (say, `superseded by ...`) is kept.
+
+Set it up once per clone:
+
+```sh
+plan-me decisions install
 ```
+
+It does two things:
+
+1. adds `docs/decisions.md merge=plan-me-decisions` to `.gitattributes`. This file is shared: commit it (once per
+   repository);
+2. adds the driver to this clone's git configuration (`merge.plan-me-decisions.driver = plan-me decisions
+   merge-driver %O %A %B`). Git never shares its configuration, so every clone runs `install` once; until then git
+   merges the index as text. `plan-me` must be on the PATH; pass `--command "<how to start plan-me>"` otherwise
+   (e.g. `--command "npx plan-me"`).
+
+Running `install` again changes nothing. If one side's index isn't a valid generated index (someone edited it by
+hand), the driver gives up and git reports a normal conflict; take either side and run `plan-me decisions index`.
+After any merge, `plan-me decisions check` (the pre-commit hook and the Action run it) confirms that the index matches
+the decision files.
+
+Note: GitHub's merge button and its "Update branch" button don't run custom merge drivers. When GitHub says a pull
+request has a conflict in `docs/decisions.md`, merge the default branch into it locally (`git merge main`; the
+driver resolves the index) and push.
 
 ## Commands
 
-The same commands exist as MCP tools (`decide`, `decisions_index`, `decisions_check`, `decisions_import`; see
-[mcp.md](./mcp.md)). They work on the files under the current directory (run them from the repository root) and need
-no token, except `decide --question`, which writes to the question issue.
+The same commands exist as MCP tools (`ask`, `decide`, `decisions_index`, `decisions_check`, `decisions_import`;
+see [mcp.md](./mcp.md)); `decisions install` and `decisions merge-driver` are for git and the CLI only. The decision
+commands work on the files under the current directory (run them from the repository root) and need no token, except
+`ask` and `decide --question`, which write to GitHub issues.
+
+### Open a question
+
+```sh
+plan-me ask 42 "Files or a database?"                          # issue #42 becomes needs-decision, the question as a comment
+plan-me ask "Where do decisions live?" "Files or a database?"  # a new issue with that title, needs-decision
+```
+
+The first argument is an issue (`42`, `#42`, or an item id); anything else is the title of a new question issue
+(type Decision when the repository has it; asking again with the same title returns the same issue).
 
 ### Record a decision
 
@@ -112,12 +150,41 @@ plan-me decide "One file per decision in docs/decisions/, an index plan-me gener
 - writes `docs/decisions/<date>-<id>.md` (the id is the title's slug unless you give `--id`) and regenerates the index;
 - `--supersedes <id>` marks that decision `superseded` with `superseded_by` set to the new one; `--amends <id>`
   marks it `amended`;
-- `--question 42` answers the question issue (below);
+- `--question 42` answers question issue #42 (below); in `decide`, `--question` is always an issue number;
 - running it again with the same input changes nothing (`unchanged`); a different decision with the same id is an
   error: pass `--id`.
 
-`decide` without `--title` keeps its old meaning: `plan-me decide 42 --question "Files or a database?"` marks issue
-#42 needs-decision and posts the question as a comment.
+The old form `plan-me decide 42 --question "Files or a database?"` (without `--title`) still works for now: it
+does what `ask` does and prints a warning that it is deprecated and names `ask`.
+
+### Licence headers
+
+If the repository has a `.reuse-me.json` (the configuration of dev-build-deploy/reuse-me, which checks that every file
+says who owns it and under which licence), `decide`, `decisions import` and `decisions index` put an SPDX header in
+each file they write, as an HTML comment right after the front matter, so a file copied out of the repository still
+says who owns it:
+
+<!-- REUSE-IgnoreStart -->
+```markdown
+---
+id: decisions-are-files
+...
+---
+
+<!--
+SPDX-FileCopyrightText: 2026 Kevin de Jong <monkaii@hotmail.com>
+SPDX-License-Identifier: CC-BY-4.0
+-->
+
+# Decisions are files, managed by plan-me
+```
+<!-- REUSE-IgnoreEnd -->
+
+The holder and licence come from the first rule in `.reuse-me.json` whose `paths` match the file (for example
+`"paths": ["docs/**"]`), else from its `defaults`, else (for the licence) from the only file in `LICENSES/`, the
+same way reuse-me reads them. The year is the rule's `year` if it has one, else the decision's year (for the index:
+the oldest decision's year), so the output doesn't change with the calendar. A path in `exclude`, or no holder or
+licence, means no header. Without a `.reuse-me.json`, plan-me writes no header at all.
 
 ### Regenerate the index
 
@@ -178,8 +245,8 @@ by hand where the old text was ambiguous, then run `plan-me decisions index`.
 
 Open questions are issues with status needs-decision. The flow:
 
-1. **Ask.** Someone files the question as an issue and marks it: `plan-me decide 42 --question "Files or a
-   database?"` (status needs-decision, the question as a comment). `plan-me next` lists needs-decision items first
+1. **Ask.** Someone opens the question: `plan-me ask 42 "Files or a database?"` for an existing issue, or
+   `plan-me ask "Where do decisions live?" "Files or a database?"` for a new one (status needs-decision). `plan-me next` lists needs-decision items first
    within a priority, so they get answered.
 2. **Answer.** The person who decides answers on the issue (or anywhere).
 3. **Record.** In the branch that carries the change, run `plan-me decide "<the answer>" --title ... --by ...
