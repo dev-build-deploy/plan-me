@@ -10,7 +10,7 @@ PlanMe manages a backlog on GitHub Issues and Projects v2: a [Command Line Inter
 commands as tools. It is deterministic (no AI anywhere) and built to be cheap for an LLM to drive: one line per item
 by default, `--json` everywhere, idempotent commands, and a local snapshot to grep instead of many API calls.
 
-- **One board per component**: each component (e.g. `engine`, `birchling`, `leertoren`) has its own Projects v2
+- **One board per component**: each component (e.g. `api`, `web`, `mobile`) has its own Projects v2
   board; an issue's `component:<name>` label picks it.
 - **Fields**: Status (open, in-progress, needs-decision, blocked, done), Priority (P1-P3), Role (the agent role that
   does it), Size.
@@ -24,12 +24,12 @@ by default, `--json` everywhere, idempotent commands, and a local snapshot to gr
 
 ```sh
 $ plan-me snapshot
-# plan-me snapshot dev-build-deploy/birchling: 4 open items
-## leertoren
-#12 [leertoren P1 in-progress feel-polish] Controller feel lab
-#3 [leertoren P1 open epic] Hero controller
-  #14 [leertoren P1 open engine-dev] Engine motor bound to Lua — blocked by #12
-#20 [leertoren P2 open user] Top-down walk for the youngest
+# plan-me snapshot octo-org/notes: 4 open items
+## web
+#12 [web P1 in-progress frontend] Editor toolbar prototype
+#3 [web P1 open epic] Rich-text editor
+  #14 [web P1 open backend] Autosave endpoint — blocked by #12
+#20 [web P2 open user] Larger text for small screens
 ```
 
 ## Native GitHub features and fallbacks
@@ -51,7 +51,7 @@ the label.
 - **Read once, grep often**: `plan-me snapshot --out backlog.txt` writes the whole open backlog, one line per item
   (`#12 [component priority status role] title — blocked by #9`), epics with their children indented. It is
   deterministic (no timestamps), so it diffs cleanly; grep it instead of calling the API per item.
-- **Ask for the next job**: `plan-me next --component leertoren --role feature-dev` returns one line.
+- **Ask for the next job**: `plan-me next --component web --role frontend` returns one line.
 - **Structured output**: add `--json` to any command; mutating commands answer `{item, changed, actions}`.
 - **Idempotent**: every command can be retried; a second run reports `#12 unchanged`. `new --id <id>` returns the
   existing item instead of creating a duplicate.

@@ -58,10 +58,10 @@ Mutating commands print what changed and the item afterwards:
 ```sh
 $ plan-me start 12 --branch feat/12-lab
 #12 branch feat/12-lab; status open -> in-progress
-#12 [leertoren P1 in-progress feel-polish] Controller feel lab
+#12 [web P1 in-progress frontend] Editor toolbar prototype
 $ plan-me start 12 --branch feat/12-lab
 #12 unchanged
-#12 [leertoren P1 in-progress feel-polish] Controller feel lab
+#12 [web P1 in-progress frontend] Editor toolbar prototype
 ```
 
 ## Import

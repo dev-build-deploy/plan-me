@@ -79,7 +79,7 @@ export class Backlog {
   }
 
   /**
-   * Resolves an item reference: `12`, `#12`, or a marker id (`feel-polish`).
+   * Resolves an item reference: `12`, `#12`, or a marker id (`editor-toolbar`).
    * @throws When nothing matches
    */
   async resolve(ref: string | number): Promise<number> {

@@ -23,31 +23,31 @@ function entry(list: ListEntry[], number: string): ListEntry {
   return found;
 }
 
-/** A repository holding Birchling's two lists where Birchling keeps them. */
-function birchling(): string {
+/** A repository holding a numbered list and an app's labelled list where a monorepo keeps them. */
+function monorepo(): string {
   return repo({
-    "docs/decisions.md": fixture("birchling.md"),
-    "games/leertoren/docs/decisions.md": fixture("leertoren.md"),
+    "docs/decisions.md": fixture("numbered.md"),
+    "apps/web/docs/decisions.md": fixture("labelled.md"),
   });
 }
 
 describe("numbered lists (docs/decisions.md)", () => {
-  const list = parseDecisionList(fixture("birchling.md"), "numbered");
+  const list = parseDecisionList(fixture("numbered.md"), "numbered");
 
   test("entries, titles, dates from the parentheses or the heading, by", () => {
     expect(list).toHaveLength(28);
-    expect(list[0]).toMatchObject({ number: "1", date: "2026-10-10", title: "Upgrades only in the upgrade tree" });
+    expect(list[0]).toMatchObject({ number: "1", date: "2026-10-10", title: "Notes sync only over the account" });
     expect(list[0].by).toBeUndefined();
-    expect(list[0].text).toMatch(/^\*\*Upgrades only in the upgrade tree:\*\* no level-up cards during nights; the/);
-    expect(list[0].text).toContain("\nsynergies) is bought with sparkles in the tree's night branch.");
-    expect(list.find(e => e.number === "4")).toMatchObject({ title: "The swing stops at contact", date: "2026-10-10" });
+    expect(list[0].text).toMatch(/^\*\*Notes sync only over the account:\*\* no peer-to-peer sync between devices; the/);
+    expect(list[0].text).toContain("\nhistory) goes through the account's server in the sync service.");
+    expect(list.find(e => e.number === "4")).toMatchObject({ title: "The editor stops at the page edge", date: "2026-10-10" });
     expect(list.find(e => e.number === "45")).toMatchObject({
       date: "2026-10-12",
-      title: "3D portraits: a quick fix on step 1",
+      title: "Avatars: a quick fix on step 1",
     });
-    expect(list.find(e => e.number === "128")).toMatchObject({ date: "2026-10-25", by: "the user" });
+    expect(list.find(e => e.number === "128")).toMatchObject({ date: "2026-10-25", by: "the owner" });
     expect(list.find(e => e.number === "82")?.date).toBe("2026-10-12"); // its parentheses close on the next line
-    expect(list.find(e => e.number === "43")?.by).toBeUndefined(); // "the after-Stone-Peak question" is no decider
+    expect(list.find(e => e.number === "43")?.by).toBeUndefined(); // "the after-launch question" is no decider
   });
 
   test("changes: refines amends, replaces supersedes, a possessive in another clause is nothing", () => {
@@ -64,25 +64,25 @@ describe("numbered lists (docs/decisions.md)", () => {
   });
 });
 
-describe("labelled lists (games/leertoren/docs/decisions.md)", () => {
-  const list = parseDecisionList(fixture("leertoren.md"), "labelled");
+describe("labelled lists (apps/web/docs/decisions.md)", () => {
+  const list = parseDecisionList(fixture("labelled.md"), "labelled");
 
   test("entries keep their labels; titles from the first sentence without the user's remarks", () => {
     expect(list).toHaveLength(24);
-    expect(list[0]).toMatchObject({ number: "L1", date: "2026-10-16", title: "A learning game for the user's son" });
+    expect(list[0]).toMatchObject({ number: "L1", date: "2026-10-16", title: "A notes app for the owner's team" });
     expect(list.find(e => e.number === "L33")).toMatchObject({
-      by: "the user",
-      title: "Useful for learning from groep 1 to groep 8, not only groep 5",
+      by: "the owner",
+      title: "Useful for teams from 1 to 100 people, not only 8",
     });
     expect(list.find(e => e.number === "L112")?.title).toBe(
-      "A PoC of the walk as a dungeon crawl (design/crawl-poc.md)"
+      "A PoC of the board as a kanban view (design/kanban-poc.md)"
     );
     const l87 = list.find(e => e.number === "L87");
-    expect(l87?.title).toBe("The one hero's progress, five answers");
-    expect(l87?.text).toContain("\n2. Power creep: both a gentle automatic scaling");
+    expect(l87?.title).toBe("The one profile's progress, five answers");
+    expect(l87?.text).toContain("\n2. Power users: both a gentle automatic scaling");
   });
 
-  test("changes: Refines L1, L31; replaces L96's; L112's ... is replaced; not l54-hands", () => {
+  test("changes: Refines L1, L31; replaces L96's; L112's ... is replaced; not l54-toolbar", () => {
     const of = (n: string): ReturnType<typeof findChanges> => findChanges(entry(list, n), "labelled");
     expect(of("L33")).toEqual({ superseded: [], amended: ["L1", "L31"] });
     expect(of("L97")).toEqual({ superseded: [], amended: ["L96"] });
@@ -106,17 +106,17 @@ describe("labelled lists (games/leertoren/docs/decisions.md)", () => {
 });
 
 describe("import", () => {
-  test("round trip: both of Birchling's lists, the index, a clean check, a rerun that changes nothing", () => {
-    const root = birchling();
+  test("round trip: both lists, the index, a clean check, a rerun that changes nothing", () => {
+    const root = monorepo();
     const first = importDecisions(root, "docs/decisions.md", "numbered");
-    expect(first).toContain("wrote docs/decisions/2026-10-10-upgrades-only-in-the-upgrade-tree.md");
+    expect(first).toContain("wrote docs/decisions/2026-10-10-notes-sync-only-over-the-account.md");
     expect(first).toContain(
-      "wrote docs/decisions/2026-10-10-every-night-must-be-compelling-exciting.md (superseded by decisions-as-files-managed-by-plan)"
+      "wrote docs/decisions/2026-10-10-every-page-must-load-fast-with.md (superseded by decisions-as-files-managed-by-plan)"
     );
     expect(first[first.length - 1]).toBe("wrote docs/decisions.md");
-    const second = importDecisions(root, "games/leertoren/docs/decisions.md", "labelled", { scope: ["leertoren"] });
+    const second = importDecisions(root, "apps/web/docs/decisions.md", "labelled", { scope: ["web"] });
     expect(second).toContain(
-      "wrote docs/decisions/2026-10-17-a-standalone-game-on-the-engine.md (superseded by a-synthetic-entry-for-the-tests)"
+      "wrote docs/decisions/2026-10-17-a-standalone-web-app-on-the.md (superseded by a-synthetic-entry-for-the-tests)"
     );
     expect(readDecisions(root, { dir: "docs/decisions", index: "docs/decisions.md" }).decisions).toHaveLength(52);
     expect(checkDecisions(root)).toEqual([]);
@@ -126,27 +126,27 @@ describe("import", () => {
       "- backlog-on-github-issues-plan-me · 128 · 2026-10-25 · current · - · Backlog on GitHub issues (plan-me), docs to the Wiki (docs-me)\n"
     );
     expect(index).toContain(
-      "- longer-nights-b · 79 · 2026-10-11 · amended by day-and-night-lengths-in-data · - · Longer nights (B)\n"
+      "- longer-trials-b · 79 · 2026-10-11 · amended by trial-and-grace-lengths-in-data · - · Longer trials (B)\n"
     );
     expect(index).toContain(
-      "- a-poc-of-the-walk-as · L112 · 2026-10-28 · amended by the-rooms-are-twice-as-big · leertoren · "
+      "- a-poc-of-the-board-as · L112 · 2026-10-28 · amended by the-columns-are-twice-as-wide · web · "
     );
-    expect(index.indexOf("## Superseded")).toBeLessThan(index.indexOf("- a-standalone-game-on-the-engine · L2 "));
+    expect(index.indexOf("## Superseded")).toBeLessThan(index.indexOf("- a-standalone-web-app-on-the · L2 "));
 
-    const rerun = importDecisions(root, "games/leertoren/docs/decisions.md", "labelled", { scope: ["leertoren"] });
-    expect(rerun[0]).toBe("exists L1 docs/decisions/2026-10-16-a-learning-game-for-the-users.md");
+    const rerun = importDecisions(root, "apps/web/docs/decisions.md", "labelled", { scope: ["web"] });
+    expect(rerun[0]).toBe("exists L1 docs/decisions/2026-10-16-a-notes-app-for-the-owners.md");
     expect(rerun.every(l => l.startsWith("exists "))).toBe(true);
     expect(checkDecisions(root)).toEqual([]);
   });
 
   test("--dry-run writes nothing; --by fills in entries that don't say", () => {
-    const root = birchling();
+    const root = monorepo();
     const lines = importDecisions(root, "docs/decisions.md", "numbered", { dryRun: true, by: "the owner" });
-    expect(lines[0]).toBe("would write docs/decisions/2026-10-10-upgrades-only-in-the-upgrade-tree.md");
+    expect(lines[0]).toBe("would write docs/decisions/2026-10-10-notes-sync-only-over-the-account.md");
     expect(fs.existsSync(path.join(root, "docs/decisions"))).toBe(false);
     importDecisions(root, "docs/decisions.md", "numbered", { by: "the owner" });
     const text = fs.readFileSync(
-      path.join(root, "docs/decisions/2026-10-10-upgrades-only-in-the-upgrade-tree.md"),
+      path.join(root, "docs/decisions/2026-10-10-notes-sync-only-over-the-account.md"),
       "utf8"
     );
     expect(text).toContain('by: "the owner"');
@@ -159,10 +159,10 @@ describe("import", () => {
   });
 
   test("the decisions_import command", async () => {
-    const root = birchling();
+    const root = monorepo();
     const ctx = { backlog: () => { throw new Error("no backlog"); }, root }; // prettier-ignore
     const out = await COMMANDS.decisions_import.run(ctx, {
-      file: "games/leertoren/docs/decisions.md",
+      file: "apps/web/docs/decisions.md",
       format: "labelled",
     });
     expect(out.text.split("\n")).toHaveLength(25);
@@ -176,7 +176,7 @@ describe("the CLI (the bundled lib/cli)", () => {
     execFileSync("node", [cli, ...args], { cwd: root, encoding: "utf8", env: { ...process.env, GITHUB_TOKEN: "x" } });
 
   test("import, decide, index and check need no configuration", () => {
-    const root = birchling();
+    const root = monorepo();
     expect(run(root, ["decisions", "import", "docs/decisions.md", "--format", "numbered"])).toContain(
       "wrote docs/decisions.md"
     );
