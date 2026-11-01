@@ -1,0 +1,10 @@
+# SPDX-FileCopyrightText: 2026 Kevin de Jong <monkaii@hotmail.com>
+# SPDX-License-Identifier: MIT
+
+- id: plan-me-decisions
+  name: PlanMe - Decisions check
+  description: Fails when a decision file in docs/decisions/ is invalid, ids collide or docs/decisions.md is stale
+  entry: plan-me decisions check
+  language: node
+  pass_filenames: false
+  files: ^docs/decisions

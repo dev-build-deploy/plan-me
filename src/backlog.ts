@@ -303,6 +303,25 @@ export class Backlog {
     return outcome;
   }
 
+  /**
+   * A question answered by a decision file: a comment with the answer and the file, a `Decision: <path>` body line,
+   * status in-progress (the issue stays open: the pull request carrying the file closes it with `Closes #n`).
+   * Idempotent: nothing happens when the body already names the file.
+   */
+  async answer(ref: string | number, file: string, summary: string): Promise<Outcome> {
+    const raw = await this.raw(ref);
+    const body = appendLine(raw.body, `Decision: ${file}`);
+    if (body === raw.body) return { item: await this.item(raw), changed: false, actions: [] };
+    await this.api.comment(
+      raw.number,
+      `**Decided:** ${summary}\n\nThe decision is \`${file}\`. The pull request that adds this file closes this ` +
+        `issue (\`Closes #${raw.number}\` in its description).`
+    );
+    await this.api.updateBody(raw.number, body);
+    const outcome = await this.setStatus(raw.number, "in-progress");
+    return { ...outcome, changed: true, actions: ["comment", `decision ${file}`, ...outcome.actions] };
+  }
+
   /** `done`: a Done comment (when still open), closed, status done; idempotent. */
   async done(ref: string | number, note?: string): Promise<Outcome> {
     const raw = await this.raw(ref);

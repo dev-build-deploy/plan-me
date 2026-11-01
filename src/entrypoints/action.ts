@@ -9,6 +9,7 @@ import * as github from "@actions/github";
 import { onIssueClosed, onPullRequest, sweep } from "../automation";
 import { Backlog } from "../backlog";
 import { loadConfig } from "../config";
+import { checkDecisions } from "../decisions";
 import { GitHubApi, OctokitLike } from "../github";
 
 type PullRequestPayload = { number: number; merged?: boolean; body?: string | null; head: { ref: string } };
@@ -35,9 +36,23 @@ async function handle(backlog: Backlog): Promise<string[]> {
 }
 
 /**
+ * `decisions check` on the checked-out repository (the workspace): one error annotation per problem. A repository
+ * without decision files passes; without a checkout there is nothing to check.
+ * @returns Whether the decisions are clean
+ */
+function checkDecisionFiles(): boolean {
+  const root = process.env.GITHUB_WORKSPACE ?? process.cwd();
+  const problems = checkDecisions(root);
+  problems.forEach(p => core.error(p));
+  core.info(problems.length > 0 ? `plan-me: ${problems.length} decision problem(s)` : "plan-me: decisions ok");
+  return problems.length === 0;
+}
+
+/**
  * Main entry point for the GitHub Action.
  */
 async function run(): Promise<void> {
+  const decisionsClean = checkDecisionFiles();
   try {
     const config = loadConfig(core.getInput("config") || undefined, process.env.GITHUB_REPOSITORY);
     const octokit = github.getOctokit(core.getInput("token", { required: true })) as unknown as OctokitLike;
@@ -46,6 +61,7 @@ async function run(): Promise<void> {
     lines.forEach(l => core.info(l));
     if (lines.length === 0) core.info("plan-me: nothing to change");
     core.setOutput("changes", JSON.stringify(lines));
+    if (!decisionsClean) core.setFailed("plan-me: the decisions check failed (run `plan-me decisions check`)");
   } catch (e) {
     core.setFailed((e as Error).message);
   }
