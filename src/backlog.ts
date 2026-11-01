@@ -7,7 +7,9 @@ import { FieldSpec, PlanApi, RawIssue } from "./api";
 import { componentLabel, Config, LabelConfig, SelectField, Status, STATUSES, typeLabel } from "./config";
 import { slugify } from "./decisions";
 import { appendLine } from "./github";
+import { parseSections } from "./issue-check";
 import { compareItems, componentOf, formatSnapshot, isEpic, Item, marker, MARKER, toItem, toItems } from "./item";
+import { DESIGN_DOCS_HEADING, sectionsFor } from "./templates";
 
 /** The plan-me field values to write (keys, not option names); undefined fields are left alone. */
 export interface FieldValues {
@@ -189,7 +191,7 @@ export class Backlog {
       issueType = issueTypes.find(t => t.toLowerCase() === input.type?.toLowerCase());
       if (!issueType) labels.push(typeLabel(this.config, input.type));
     }
-    const body = this.body(input);
+    const body = this.bodyFor(input);
     const priority = input.priority ?? this.config.fields.priority.default;
     this.fieldValues({ priority, role: input.role, size: input.size }); // validate before creating
     const parent = input.parent ? await this.raw(input.parent) : undefined;
@@ -211,11 +213,17 @@ export class Backlog {
     return { item: await this.item(raw), changed: true, actions };
   }
 
-  private body(input: NewItem): string {
+  /**
+   * The body `create` writes: the given body, the design docs (as the type's `### Design docs` section when it has
+   * one and the body doesn't, else a `Design:` list), then the hidden id marker. The issue check reads this text.
+   */
+  bodyFor(input: NewItem): string {
     const parts = [input.body?.trim() ?? ""];
     if (input.design && input.design.length > 0) {
       const links = input.design.map(d => `- [${d}](${/^https?:/.test(d) ? d : docsBase(this.config) + d})`);
-      parts.push(["Design:", ...links].join("\n"));
+      const section = input.type && sectionsFor(input.type).some(s => s.label === DESIGN_DOCS_HEADING);
+      const has = parseSections(parts[0]).some(s => s.label.toLowerCase() === DESIGN_DOCS_HEADING.toLowerCase());
+      parts.push([section && !has ? `### ${DESIGN_DOCS_HEADING}\n` : "Design:", ...links].join("\n"));
     }
     if (input.id) parts.push(marker(input.id));
     return parts.filter(Boolean).join("\n\n") + "\n";

@@ -16,6 +16,7 @@ import {
   parseFormAnswers,
   sectionsFor,
   templateFileName,
+  TYPE_SPECS,
   writeTemplates,
 } from "../src/templates";
 
@@ -84,11 +85,11 @@ describe("writing the forms", () => {
     expect(bug.labels).toBeUndefined();
     expect(bug.projects).toBeUndefined(); // three boards: the Action puts the issue on the chosen one
     expect(bug.body.map(e => e.attributes.label)).toEqual([
+      "Context",
       "Steps to reproduce",
-      "Expected",
-      "Actual",
-      "Version",
-      "Evidence",
+      "Observed behavior",
+      "Expected behavior",
+      "Additional context",
       "Component",
       "Priority",
       "Role",
@@ -96,7 +97,9 @@ describe("writing the forms", () => {
     ]);
     const byLabel = (label: string): Element | undefined => bug.body.find(e => e.attributes.label === label);
     expect(byLabel("Steps to reproduce")?.validations?.required).toBe(true);
-    expect(byLabel("Version")?.type).toBe("input");
+    for (const label of ["Context", "Observed behavior", "Expected behavior", "Additional context"]) {
+      expect(byLabel(label)?.validations?.required).toBe(true);
+    }
     expect(byLabel("Component")?.attributes).toMatchObject({ options: ["api", "web", "mobile"], default: 1 });
     expect(byLabel("Priority")?.attributes).toMatchObject({ options: ["P1", "P2", "P3"], default: 1 });
     expect(byLabel("Role")?.attributes.options).toEqual(["lead", "backend", "frontend", "user"]);
@@ -113,16 +116,21 @@ describe("writing the forms", () => {
     expect(decision.body[0]).toMatchObject({ type: "markdown" });
     expect(decision.body[0].attributes.value).toContain("plan-me decide");
     expect(decision.body.map(e => e.attributes.label)).toContain("Who decides");
-    expect(
-      form(root, "epic.yml")
+    expect(decision.body.find(e => e.attributes.label === "Who decides")?.validations?.required).toBe(true);
+    const labels = (name: string, n: number): (string | undefined)[] =>
+      form(root, name)
         .body.map(e => e.attributes.label)
-        .slice(0, 3)
-    ).toEqual(["Outcome", "Child items", "Design docs"]);
-    expect(
-      form(root, "feature.yml")
-        .body.map(e => e.attributes.label)
-        .slice(0, 3)
-    ).toEqual(["Goal", "Acceptance criteria", "Design docs"]);
+        .slice(0, n);
+    expect(labels("epic.yml", 6)).toEqual(["Why", "Context", "What", "Outcome", "Child items", "Design docs"]);
+    expect(labels("feature.yml", 5)).toEqual([
+      "Context",
+      "Problem",
+      "Expected value",
+      "Acceptance criteria",
+      "Design docs",
+    ]);
+    expect(labels("task.yml", 4)).toEqual(["Why", "Context", "What", "Done when"]);
+    expect(labels("design.yml", 6)).toEqual(["Why", "Context", "What", "Constraints", "Options", "Design docs"]);
   });
 
   test("one board with a number: projects; no boards: no component dropdown; free-text role: an input", () => {
@@ -136,7 +144,21 @@ describe("writing the forms", () => {
     expect(task.body.find(e => e.attributes.label === "Role")?.type).toBe("input");
   });
 
-  test("a custom type gets a Description form; the chooser follows the templates settings", () => {
+  test("a form generated before the sections changed is reported stale", () => {
+    const root = repo();
+    const task = TYPE_SPECS.task;
+    TYPE_SPECS.task = { ...task, sections: [{ label: "What to do", required: true }] };
+    try {
+      writeTemplates(root, CONFIG, { issueTypes: ORG_TYPES });
+    } finally {
+      TYPE_SPECS.task = task;
+    }
+    expect(checkTemplates(root, CONFIG, { issueTypes: ORG_TYPES })).toEqual([
+      `${DIR}/task.yml: stale (the configuration changed); run \`plan-me templates\``,
+    ]);
+  });
+
+  test("a custom type gets the core sections; the chooser follows the templates settings", () => {
     const config = resolveConfig({
       ...RAW,
       types: ["Bug", "Spike"],
@@ -149,7 +171,7 @@ describe("writing the forms", () => {
     writeTemplates(root, config, { issueTypes: [] });
     expect(fs.readdirSync(path.join(root, DIR)).sort()).toEqual(["bug.yml", "config.yml", "spike.yml"]);
     expect(form(root, "spike.yml")).toMatchObject({ name: "Spike", description: "A spike", labels: ["type:spike"] });
-    expect(sectionsFor("Spike").map(s => s.label)).toEqual(["Description"]);
+    expect(sectionsFor("Spike").map(s => s.label)).toEqual(["Why", "Context", "What"]);
     expect(yaml.load(read(root, `${DIR}/config.yml`))).toEqual({
       blank_issues_enabled: true,
       contact_links: [{ name: "Questions", url: "https://example.com/forum", about: "Ask the community" }],
@@ -259,7 +281,7 @@ describe("licence headers (.reuse-me.json)", () => {
 describe("parseFormAnswers", () => {
   test("the answers by heading; empty answers left out", () => {
     const body = [
-      "### Goal",
+      "### Problem",
       "",
       "Share a note by link.",
       "",
@@ -281,7 +303,7 @@ describe("parseFormAnswers", () => {
       "None",
     ].join("\r\n");
     expect(parseFormAnswers(body)).toEqual({
-      Goal: "Share a note by link.",
+      Problem: "Share a note by link.",
       "Acceptance criteria": "- [ ] a link opens the note\n- [ ] read only",
       Component: "api",
     });

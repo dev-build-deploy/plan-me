@@ -51,6 +51,20 @@ export interface NewIssue {
   issueType?: string;
 }
 
+/** The parts of an issue `updateIssue` rewrites (undefined: left alone). */
+export interface IssueUpdate {
+  title?: string;
+  body?: string;
+  /** The native issue type (only where the repository has issue types). */
+  issueType?: string;
+}
+
+/** A comment on an issue. */
+export interface IssueComment {
+  id: number;
+  body: string;
+}
+
 /**
  * The GitHub operations plan-me needs. `GitHubApi` implements it with Octokit; tests use an in-memory fake.
  */
@@ -65,6 +79,14 @@ export interface PlanApi {
   createIssue(input: NewIssue): Promise<RawIssue>;
   /** Replaces an issue's body. */
   updateBody(number: number, body: string): Promise<void>;
+  /** Rewrites an issue's title, body or issue type. */
+  updateIssue(number: number, update: IssueUpdate): Promise<void>;
+  /** Removes a label from an issue (a missing label is fine). */
+  removeLabel(number: number, label: string): Promise<void>;
+  /** The comments on an issue, oldest first. */
+  listComments(number: number): Promise<IssueComment[]>;
+  /** Replaces a comment's text. */
+  updateComment(id: number, body: string): Promise<void>;
   /** Adds labels to an issue (existing labels are kept). */
   addLabels(number: number, labels: string[]): Promise<void>;
   /** Adds a comment. */

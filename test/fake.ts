@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { Features, FieldSpec, NewIssue, PlanApi, RawIssue } from "../src/api";
+import { Features, FieldSpec, IssueComment, IssueUpdate, NewIssue, PlanApi, RawIssue } from "../src/api";
 import { Backlog } from "../src/backlog";
 import { BoardConfig, LabelConfig, resolveConfig } from "../src/config";
 
@@ -85,6 +85,34 @@ export class FakeApi implements PlanApi {
     this.get(number).body = body;
   }
 
+  commentIds = new Map<number, IssueComment[]>();
+  private commentCounter = 1000;
+
+  async updateIssue(number: number, update: IssueUpdate): Promise<void> {
+    this.calls.push(`update #${number} ${Object.keys(update).join(",")}`);
+    const raw = this.get(number);
+    if (update.title !== undefined) raw.title = update.title;
+    if (update.body !== undefined) raw.body = update.body;
+    if (update.issueType !== undefined) raw.issueType = update.issueType;
+  }
+
+  async removeLabel(number: number, label: string): Promise<void> {
+    const raw = this.get(number);
+    raw.labels = raw.labels.filter(l => l !== label);
+  }
+
+  async listComments(number: number): Promise<IssueComment[]> {
+    return (this.commentIds.get(number) ?? []).map(c => ({ ...c }));
+  }
+
+  async updateComment(id: number, body: string): Promise<void> {
+    this.calls.push(`edit comment ${id}`);
+    for (const list of this.commentIds.values()) {
+      const c = list.find(x => x.id === id);
+      if (c) c.body = body;
+    }
+  }
+
   async addLabels(number: number, labels: string[]): Promise<void> {
     this.get(number).labels.push(...labels);
   }
@@ -92,6 +120,7 @@ export class FakeApi implements PlanApi {
   async comment(number: number, body: string): Promise<void> {
     this.calls.push(`comment #${number}`);
     this.comments.set(number, [...(this.comments.get(number) ?? []), body]);
+    this.commentIds.set(number, [...(this.commentIds.get(number) ?? []), { id: this.commentCounter++, body }]);
   }
 
   async setOpen(number: number, open: boolean): Promise<void> {

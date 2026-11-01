@@ -6,9 +6,10 @@
 import { z } from "zod";
 
 import { Backlog, Filters, Outcome } from "./backlog";
-import { Config, STATUSES } from "./config";
+import { Config, resolveConfig, STATUSES } from "./config";
 import { checkDecisions, DEFAULT_DECISIONS, formatIndexLine, recordDecision, writeIndex } from "./decisions";
 import { IMPORT_FORMATS, importDecisions } from "./decisions-import";
+import { checkIssue, formatIssueText, IssueCheckOptions, IssueRefused, IssueReport, problemLines } from "./issue-check";
 import { formatItem, Item } from "./item";
 import { checkTemplates, TEMPLATE_DIR, TemplatesOutcome, writeTemplates } from "./templates";
 
@@ -35,6 +36,34 @@ export interface CommandContext {
   root: string;
   /** The configuration without the backlog (no token needed); default the backlog's. */
   config?: () => Config;
+  /** How the issue check runs (default: the real Vale, the glossary under `root`). */
+  check?: Omit<IssueCheckOptions, "root">;
+}
+
+/** The issue check's options for a context. */
+export function checkOptions(ctx: CommandContext, itemIds?: string[]): IssueCheckOptions {
+  return { root: ctx.root, ...ctx.check, ...(itemIds ? { itemIds } : {}) };
+}
+
+/**
+ * The configuration for the issue check: the repository's when it can be loaded, else the defaults (types Feature,
+ * Bug, Task, Design, Decision, Epic), so `check-issue` works without a configuration file.
+ */
+export function checkConfig(ctx: CommandContext): Config {
+  try {
+    return configOf(ctx);
+  } catch (_e) {
+    return resolveConfig({}, "local/local");
+  }
+}
+
+/** The warning text for a report with warnings (or a skipped prose check): printed, not refused. */
+function warningOf(r: IssueReport): string | undefined {
+  const lines = problemLines(r).filter(l => l.includes(" warning: "));
+  if (lines.length > 0) {
+    return `warning: the issue text has ${r.warnings} warning(s); fix them with \`plan-me check-issue\`:\n${lines.join("\n")}`;
+  }
+  return undefined;
 }
 
 /** The configuration of a context. */
@@ -136,10 +165,13 @@ export const COMMANDS = {
     }),
   }),
   new: define({
-    description: "Create an item (idempotent when an id is given)",
+    description:
+      "Create an item (idempotent when an id is given). The body must have the type's sections as `### <section>` " +
+      "headings (Why, Context, What, then the type's own; check_issue lists them): a body that fails the issue " +
+      "check is refused",
     input: {
       title: z.string(),
-      body: z.string().optional(),
+      body: z.string().optional().describe("The body: the type's sections as `### <section>` headings, each with text"),
       type: z.string().optional().describe("Feature, Bug, Task, Design, Decision, Epic"),
       priority: z.string().optional(),
       component: z.string().optional(),
@@ -151,9 +183,33 @@ export const COMMANDS = {
       id: z.string().optional().describe("A stable id (hidden marker)"),
     },
     mutates: true,
-    run: onBacklog(async (b, a) =>
-      outcomeResult(b, await b.create({ ...a, parent: a.parent?.toString(), blockedBy: a.blockedBy?.map(String) }))
-    ),
+    run: async (ctx, a) => {
+      const b = ctx.backlog();
+      const input = { ...a, parent: a.parent?.toString(), blockedBy: a.blockedBy?.map(String) };
+      const checked = await checkIssue(
+        { title: a.title, type: a.type, body: b.bodyFor(input) },
+        b.config,
+        checkOptions(ctx)
+      );
+      if (checked.errors > 0) throw new IssueRefused(checked, a.type);
+      return { ...outcomeResult(b, await b.create(input)), warning: warningOf(checked) };
+    },
+  }),
+  check_issue: define({
+    description:
+      "Check an issue's text before writing it: the type, the title, the type's sections (`### Why`, `### Context`, " +
+      "`### What`, then its own) and the prose (Vale with the organization's styles: unexplained glossary terms, " +
+      "bare references, long sentences, weasel words). Errors refuse the issue; warnings only report",
+    input: {
+      body: z.string().describe("The issue body (markdown)"),
+      type: z.string().optional().describe("The issue type (Feature, Bug, ...)"),
+      title: z.string().optional(),
+    },
+    mutates: false,
+    run: async (ctx, a) => {
+      const r = await checkIssue(a, checkConfig(ctx), checkOptions(ctx));
+      return { text: formatIssueText(r), json: r, failed: r.errors > 0 };
+    },
   }),
   start: define({
     description: "Mark an item in-progress (optionally with its branch)",

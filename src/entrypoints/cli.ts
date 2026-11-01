@@ -13,11 +13,12 @@ import { Command } from "commander";
 
 import { Backlog } from "../backlog";
 import { checkClaudeSettings, findRoot, installClaudeSettings } from "../claude";
-import { CommandName, COMMANDS } from "../commands";
+import { checkConfig, checkOptions, CommandName, COMMANDS } from "../commands";
 import { CONFIG_FILE, loadConfig } from "../config";
 import { DEFAULT_DRIVER_COMMAND, installMergeDriver, runMergeDriver } from "../decisions-merge";
 import { GitHubApi, OctokitLike } from "../github";
-import { readItemFolder, readLineList, runImport } from "../importer";
+import { importRefused, readItemFolder, readLineList, runImport } from "../importer";
+import { checkIssue, formatIssueHook, formatIssueText, skeletonFor } from "../issue-check";
 import { runMcpServer } from "../mcp";
 import { writeTemplates } from "../templates";
 import { configVersionWarning, VERSION } from "../version";
@@ -98,7 +99,9 @@ function withFilters(cmd: Command): Command {
 
 program
   .command("init")
-  .description("Create the missing boards, fields, options and labels, enable the Claude Code plugin and write the issue forms (idempotent)")
+  .description(
+    "Create the missing boards, fields, options and labels, enable the Claude Code plugin and write the issue forms (idempotent)"
+  )
   .option("--dry-run", "Only print what would be created")
   .action(async (opts: { dryRun?: boolean }, cmd: Command) => {
     const g = cmd.optsWithGlobals<Globals>();
@@ -123,10 +126,16 @@ templates
   .description("Fail when a generated issue form is missing, stale or for a type no longer configured")
   .action(async (_opts: unknown, cmd: Command) => run(cmd, "templates_check", {}));
 
+/** A body from a file, or from stdin when the file is `-`. */
+function readBody(file: string): string {
+  return fs.readFileSync(file === "-" ? 0 : file, "utf8");
+}
+
 program
   .command("new <title>")
-  .description("Create an item")
-  .option("--body <text>", "The body (markdown)")
+  .description("Create an item; its body must pass the issue check (the type's sections, see check-issue)")
+  .option("--body <text>", "The body (markdown): the type's sections as `### <section>` headings")
+  .option("--body-file <file>", "Read the body from a file (`-`: stdin)")
   .option("--type <t>", "Feature, Bug, Task, Design, Decision, Epic")
   .option("--priority <p>", "P1, P2, P3 (default from the config)")
   .option("--component <c>", "The component (its board)")
@@ -136,7 +145,41 @@ program
   .option("--blocked-by <ref>", "A blocker (repeatable)", collect)
   .option("--design <path>", "A design doc (repeatable)", collect)
   .option("--id <id>", "A stable id (hidden marker); makes `new` idempotent")
-  .action(async (title: string, opts: Record<string, unknown>, cmd: Command) => run(cmd, "new", { title, ...opts }));
+  .action(async (title: string, opts: Record<string, unknown>, cmd: Command) => {
+    const { bodyFile, ...rest } = opts;
+    const body = typeof bodyFile === "string" ? readBody(bodyFile) : rest.body;
+    return run(cmd, "new", { title, ...rest, body });
+  });
+
+program
+  .command("check-issue [file]")
+  .description(
+    "Check an issue's text (a file, or stdin): its type, title, the type's sections and the prose (Vale). " +
+      "Exits 1 on errors"
+  )
+  .option("--type <t>", "The issue type (Feature, Bug, Task, Design, Decision, Epic)")
+  .option("--title <t>", "The title")
+  .option("--stdin", "Read the body from stdin")
+  .option("--format <f>", "text (default), json, or hook (for the Claude Code plugin)", "text")
+  .option("--skeleton", "Print the sections of --type as an empty body to fill in")
+  .action(async (file: string | undefined, opts: Record<string, unknown>, cmd: Command) => {
+    const g = cmd.optsWithGlobals<Globals>();
+    const ctx = { backlog: () => backlogFor(g), root: process.cwd(), config: () => loadConfig(g.config, g.repo) };
+    const config = checkConfig(ctx);
+    if (opts.skeleton) {
+      if (typeof opts.type !== "string") return cmd.error("error: --skeleton needs --type");
+      return print(g, skeletonFor(opts.type), { skeleton: skeletonFor(opts.type) });
+    }
+    if (!file && !opts.stdin) return cmd.error("error: give a file or --stdin");
+    const body = readBody(opts.stdin ? "-" : (file as string));
+    const input = { body, type: opts.type as string | undefined, title: opts.title as string | undefined };
+    const report = await checkIssue(input, config, checkOptions(ctx));
+    const format = g.json ? "json" : opts.format;
+    if (format === "hook") process.stdout.write(`${formatIssueHook(report)}\n`);
+    else if (format === "json") process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    else process.stdout.write(`${formatIssueText(report)}\n`);
+    if (report.errors > 0) process.exitCode = 1;
+  });
 
 program
   .command("start <ref>")
@@ -256,7 +299,8 @@ program
   .option("--component <c>", "The component for items whose area names none")
   .option("--design-prefix <p>", "Prefix for design doc paths", "docs/")
   .option("--done <mode>", "Done items: skip or closed", "skip")
-  .option("--dry-run", "Only print what would be created")
+  .option("--update", "Rewrite issues that exist (by id) when their record changed: title, body, type, fields")
+  .option("--dry-run", "Only print what would be created, and every item's problems")
   .action(async (target: string, opts: Record<string, string | boolean>, cmd: Command) => {
     const g = cmd.optsWithGlobals<Globals>();
     const backlog = backlogFor(g);
@@ -265,6 +309,7 @@ program
       designPrefix: opts.designPrefix as string,
       done: opts.done as "skip" | "closed",
       dryRun: !!opts.dryRun,
+      update: !!opts.update,
     };
     const folder = (opts.format ?? (fs.statSync(target).isDirectory() ? "folder" : "lines")) === "folder";
     const records = folder
@@ -272,6 +317,13 @@ program
       : readLineList(backlog.config, target, options);
     const lines = await runImport(backlog, records, options);
     print(g, lines.length > 0 ? lines.join("\n") : "nothing to import", { records: records.length, actions: lines });
+    if (importRefused(lines)) {
+      process.stderr.write(
+        "error: some items fail the issue check and were not written; give each its type and sections " +
+          "(`plan-me check-issue --skeleton --type <t>`), then import again\n"
+      );
+      process.exitCode = 1;
+    }
   });
 
 const claude = program

@@ -3,7 +3,7 @@
 
 import { expect, test } from "claude-code/testing";
 
-import { decisionChanges, ghIssue, gitCommit, relative } from "./register";
+import { bodyHash, decisionChanges, ghIssue, gitCommit, parseGhIssue, parsePlanMeNew, relative } from "./register";
 
 const ROOT = "/private/tmp/plan-me-plugin-test";
 const FORM = "# plan-me:sha256=abc\nname: Bug\n";
@@ -16,6 +16,8 @@ type Opts = {
   status?: string;
   /** What `decisions check` answers. */
   check?: { exitCode: number; stdout: string; stderr?: string };
+  /** What `check-issue --format hook` answers. */
+  issue?: { exitCode: number; stdout: string; stderr?: string };
 };
 
 // Stands for the engine beneath the plugin: the file system, the working directory and the processes. The real
@@ -26,6 +28,7 @@ async function setup($: any, on: any, opts: Opts = {}) {
   const cwd = opts.cwd ?? ROOT;
   let reached: unknown;
   const runs: string[][] = [];
+  const stdins: string[] = [];
   const toasts: string[] = [];
   on("tool.call", (_: unknown, e: unknown) => {
     reached = e;
@@ -42,17 +45,22 @@ async function setup($: any, on: any, opts: Opts = {}) {
     toasts.push(e.text);
     return { value: undefined };
   });
-  on("process.run", (_: unknown, e: { argv: string[] }) => {
+  on("process.run", (_: unknown, e: { argv: string[]; init?: { stdin?: string } }) => {
     runs.push(e.argv);
+    if (e.init?.stdin !== undefined) stdins.push(e.init.stdin);
+    const passing = { exitCode: 0, stdout: '{"errors":0,"warnings":0,"text":""}' };
     const r =
       e.argv[0] === "git"
         ? { exitCode: 0, stdout: opts.status ?? "", stderr: "" }
-        : { stderr: "", ...(opts.check ?? { exitCode: 0, stdout: "ok" }) };
+        : e.argv.includes("check-issue")
+          ? { stderr: "", ...(opts.issue ?? passing) }
+          : { stderr: "", ...(opts.check ?? { exitCode: 0, stdout: "ok" }) };
     return { value: { ...r, isStdoutTruncated: false, isStderrTruncated: false } };
   });
   await $.session.start({ cwd, surface: "terminal", isInteractive: true });
   return {
     runs,
+    stdins,
     toasts,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     call: async (args: any) => {
@@ -177,4 +185,72 @@ test("the parsers", () => {
   expect(decisionChanges("?? docs/decisions/a.md\n", true)).toBe(true);
   expect(relative("/r", "/r/docs", "../docs/./decisions.md")).toBe("docs/decisions.md");
   expect(relative("/r", "/r", "/other/x")).toBeUndefined();
+});
+
+const ERRORS = JSON.stringify({ errors: 1, warnings: 0, text: 'line 1: error: [PI005] The "Why" section is missing.' });
+const WARNINGS = JSON.stringify({ errors: 0, warnings: 1, text: "line 3: warning: [DevBuildDeploy.Weasel] 'very'" });
+
+test("plan-me new with a failing body is denied, always", async ($, on) => {
+  const t = await setup($, on, { issue: { exitCode: 1, stdout: ERRORS } });
+  const command = 'plan-me new "Export notes" --type Task --body "### What\n\nExport."';
+  for (let i = 0; i < 2; i++) {
+    const r = await t.call(bash(command));
+    expect(r.reached).toBeUndefined();
+    expect(r.text).toContain("PI005");
+    expect(r.text).toContain("check-issue --skeleton");
+  }
+  expect(t.runs.at(-1)).toEqual(expect.arrayContaining(["check-issue", "--stdin", "--type", "Task"]));
+  expect(t.stdins.at(-1)).toBe("### What\n\nExport.");
+});
+
+test("plan-me new with warnings is denied once per body, then goes through", async ($, on) => {
+  const t = await setup($, on, { issue: { exitCode: 0, stdout: WARNINGS } });
+  const command = "npx plan-me --repo o/r new 'Export notes' --type Task --body-file - <<'EOF'\n### Why\nx\nEOF";
+  const first = await t.call(bash(command));
+  expect(first.reached).toBeUndefined();
+  expect(first.text).toContain("send the same body again");
+  expect((await t.call(bash(command))).reached).toBeDefined();
+  expect(t.stdins.at(-1)).toBe("### Why\nx");
+});
+
+test("a passing body goes through; a body built by the shell is not checked (one toast)", async ($, on) => {
+  const t = await setup($, on);
+  expect((await t.call(bash('plan-me new "x" --type Task --body "ok"'))).reached).toBeDefined();
+  const shell = await t.call(bash('plan-me new "x" --type Task --body "$(./make-body.sh)"'));
+  expect(shell.reached).toBeDefined();
+  expect(t.toasts.at(-1)).toContain("issue text not checked");
+});
+
+test("the MCP tool new is checked like the command", async ($, on) => {
+  const t = await setup($, on, { issue: { exitCode: 1, stdout: ERRORS } });
+  const r = await t.call({ tool: "mcp__plugin_plan-me_plan-me__new", title: "x", type: "Bug", body: "notes" });
+  expect(r.reached).toBeUndefined();
+  expect(r.text).toContain("the MCP tool `new`");
+  expect(t.stdins.at(-1)).toBe("notes");
+  expect((await t.call({ tool: "mcp__plugin_plan-me_plan-me__list" })).reached).toBeDefined();
+});
+
+test("gh issue create with a failing body is denied with the findings", async ($, on) => {
+  const t = await setup($, on, { issue: { exitCode: 1, stdout: ERRORS } });
+  const r = await t.call(bash('gh issue create -t "x" -l type:bug --body "notes"'));
+  expect(r.reached).toBeUndefined();
+  expect(r.text).toContain("plan-me new");
+  expect(r.text).toContain("PI005");
+  expect(t.runs.at(-1)).toEqual(expect.arrayContaining(["--type", "bug"]));
+});
+
+test("the issue command parsers", () => {
+  expect(parsePlanMeNew('plan-me new "A title" --type Bug --body "x"')).toMatchObject({
+    title: "A title",
+    type: "Bug",
+    body: "x",
+  });
+  expect(parsePlanMeNew("./node_modules/.bin/plan-me -c cfg.json new t --body-file b.md")).toMatchObject({
+    title: "t",
+    bodyFile: "b.md",
+  });
+  expect(parsePlanMeNew("plan-me next")).toBeUndefined();
+  expect(parsePlanMeNew("echo plan-me new")).toBeUndefined();
+  expect(parseGhIssue("gh issue edit 3 --body=y")).toMatchObject({ body: "y" });
+  expect(bodyHash("a")).not.toBe(bodyHash("b"));
 });

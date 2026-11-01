@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: 2026 Kevin de Jong <monkaii@hotmail.com>
+# SPDX-License-Identifier: MIT
+
+# Hedges that make the reader guess how sure the author is. Inspired by proselint (BSD-3-Clause); the list is our own.
+extends: existence
+message: "'%s' hedges: say what you know, and what you do not know, plainly."
+level: warning
+ignorecase: true
+tokens:
+  - I think
+  - I believe
+  - I guess
+  - kind of
+  - sort of
+  - more or less
+  - should probably
+  - hopefully

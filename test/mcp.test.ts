@@ -19,7 +19,7 @@ import { repo } from "./repo";
 describe("MCP server", () => {
   test("exposes the commands as tools and runs them", async () => {
     const { backlog } = setup();
-    const server = createMcpServer(() => backlog);
+    const server = createMcpServer(() => backlog, process.cwd(), undefined, { vale: false });
     const client = new Client({ name: "test", version: "1" });
     const [a, b] = InMemoryTransport.createLinkedPair();
     await Promise.all([server.connect(a), client.connect(b)]);
@@ -29,6 +29,7 @@ describe("MCP server", () => {
       [
         "ask",
         "block",
+        "check_issue",
         "decide",
         "decisions_check",
         "decisions_import",
@@ -48,7 +49,16 @@ describe("MCP server", () => {
     expect(next?.inputSchema.properties).toHaveProperty("component");
     expect(next?.annotations?.readOnlyHint).toBe(true);
 
-    const created = await client.callTool({ name: "new", arguments: { title: "From MCP", priority: "P1" } });
+    const refused = await client.callTool({ name: "new", arguments: { title: "From MCP", body: "notes" } });
+    expect(refused.isError).toBe(true);
+    expect((refused.content as { text: string }[])[0].text).toMatch(/^error: the issue was not created: 2 error/);
+    expect(backlog.api).toBeDefined();
+    const body =
+      "### Why\n\nUsers ask.\n\n### Context\n\nThe app.\n\n### What\n\nAdd it.\n\n### Done when\n\n- [ ] Added.";
+    const created = await client.callTool({
+      name: "new",
+      arguments: { title: "From MCP", priority: "P1", type: "Task", body },
+    });
     expect((created.content as { text: string }[])[0].text).toBe(
       "#1 created #1; status - -> open; priority - -> P1\n#1 [game P1 open] From MCP"
     );
@@ -56,6 +66,10 @@ describe("MCP server", () => {
     expect(JSON.parse((json.content as { text: string }[])[0].text)[0]).toMatchObject({ number: 1, priority: "P1" });
     const bad = await client.callTool({ name: "show", arguments: { ref: "nope" } });
     expect(bad.isError).toBe(true);
+    const checked = await client.callTool({ name: "check_issue", arguments: { body, type: "Task", title: "x" } });
+    expect((checked.content as { text: string }[])[0].text).toBe(
+      "The issue passes every check.\nnote: the prose rules are off"
+    );
     expect(tools.find(t => t.name === "decisions_check")?.annotations?.readOnlyHint).toBe(true);
     await client.close();
   });

@@ -35,46 +35,78 @@ interface TypeSpec {
   sections: Section[];
 }
 
+/** The heading of the design docs section (`new --design` fills it). */
+export const DESIGN_DOCS_HEADING = "Design docs";
+
 const DESIGN_DOCS: Section = {
-  label: "Design docs",
+  label: DESIGN_DOCS_HEADING,
   description: "Paths in the repository or links, one per line.",
   placeholder: "docs/design/sync.md",
 };
 
+/** The core sections every type starts with (unless its form has its own opening): Why, Context, What. */
+export const CORE_SECTIONS: Section[] = [
+  {
+    label: "Why",
+    description: "The value: what it achieves, for whom, and why now. A reader who knows nothing else should get it.",
+    required: true,
+  },
+  {
+    label: "Context",
+    description:
+      "What a newcomer needs to know first: where this lives, what exists today, and what related issues or " +
+      "decisions say (in your own words, the reference in brackets).",
+    required: true,
+  },
+  { label: "What", description: "What has to be done or decided, in plain words.", required: true },
+];
+
 /**
- * The sections per type (keys lowercase), in form order. They are the headings an issue body has (`### Goal`), so
- * `new` and `import` can write the same ones; other types get TYPE_SPECS.other.
+ * The sections per type (keys lowercase), in form order. They are the headings an issue body has (`### Why`), so
+ * `new`, `import` and `check-issue` use the same ones; other types get TYPE_SPECS.other (the core sections). The
+ * required ones are what the issue check (src/issue-check.ts) asks for.
  */
 export const TYPE_SPECS: Record<string, TypeSpec> = {
   feature: {
     description: "A new capability, or a change to one",
     sections: [
-      { label: "Goal", description: "What should be possible, and for whom?", required: true },
-      { label: "Acceptance criteria", description: "When is it done?", placeholder: "- [ ] ..." },
+      { label: "Context", description: "The situation today, and who it concerns.", required: true },
+      { label: "Problem", description: "What is missing or hard today.", required: true },
+      {
+        label: "Expected value",
+        description: "What it brings, for whom, and why it is worth doing.",
+        required: true,
+      },
+      { label: "Acceptance criteria", description: "Checkable, a list.", placeholder: "- [ ] ...", required: true },
       DESIGN_DOCS,
     ],
   },
   bug: {
     description: "Something does not work as it should",
     sections: [
+      {
+        label: "Context",
+        description: "Where and when it happens: the version or build, the platform, the situation.",
+        required: true,
+      },
       { label: "Steps to reproduce", placeholder: "1. ...\n2. ...\n3. ...", required: true },
-      { label: "Expected", description: "What should happen?" },
-      { label: "Actual", description: "What happens instead?", required: true },
-      { label: "Version", kind: "input", description: "The version, build or commit it happens on." },
-      { label: "Evidence", description: "Logs, screenshots, a failing test: paste or drag them here." },
+      { label: "Observed behavior", description: "What happens.", required: true },
+      { label: "Expected behavior", description: "What should happen.", required: true },
+      {
+        label: "Additional context",
+        description: "Logs, screenshots, recordings: paste or drag them here.",
+        required: true,
+      },
     ],
   },
   task: {
     description: "A piece of work that is neither a feature nor a bug",
-    sections: [
-      { label: "What to do", required: true },
-      { label: "Done when", placeholder: "- [ ] ..." },
-    ],
+    sections: [...CORE_SECTIONS, { label: "Done when", placeholder: "- [ ] ...", required: true }],
   },
   design: {
     description: "Work out how something should look or behave before it is built",
     sections: [
-      { label: "Problem", description: "What needs designing, and why now?", required: true },
+      ...CORE_SECTIONS,
       { label: "Constraints", description: "What the design must respect." },
       { label: "Options", description: "The directions considered so far." },
       DESIGN_DOCS,
@@ -87,15 +119,20 @@ export const TYPE_SPECS: Record<string, TypeSpec> = {
       '`plan-me decide "<text>" --title "<title>" --by "<who>" --question <this issue>`: the pull request that adds ' +
       "the decision file closes this issue.",
     sections: [
-      { label: "Question", description: "The question, in one or two sentences.", required: true },
-      { label: "Options", description: "The options, with their pros and cons.", placeholder: "1. ...\n2. ..." },
-      { label: "Who decides", kind: "input", description: "The person or role who decides." },
-      { label: "Context", description: "Why it comes up now; related issues and decisions." },
+      ...CORE_SECTIONS,
+      {
+        label: "Options",
+        description: "The options, with their pros and cons.",
+        placeholder: "1. ...\n2. ...",
+        required: true,
+      },
+      { label: "Who decides", kind: "input", description: "The person or role who decides.", required: true },
     ],
   },
   epic: {
     description: "A larger outcome, split into child items",
     sections: [
+      ...CORE_SECTIONS,
       { label: "Outcome", description: "What is true when the epic is done?", required: true },
       {
         label: "Child items",
@@ -107,11 +144,11 @@ export const TYPE_SPECS: Record<string, TypeSpec> = {
   },
   other: {
     description: "",
-    sections: [{ label: "Description", required: true }],
+    sections: CORE_SECTIONS,
   },
 };
 
-/** The text sections of a type's form (the built-in ones, else a single Description). */
+/** The text sections of a type's form (the built-in ones, else the core sections). */
 export function sectionsFor(type: string): Section[] {
   return (TYPE_SPECS[type.toLowerCase()] ?? TYPE_SPECS.other).sections;
 }

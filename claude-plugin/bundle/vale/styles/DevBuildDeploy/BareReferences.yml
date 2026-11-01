@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: 2026 Kevin de Jong <monkaii@hotmail.com>
+# SPDX-License-Identifier: MIT
+
+# A reference that stands alone tells a reader nothing: "Implements #12." or "See L4.2." Say what the issue,
+# decision or document says, in a sentence of your own, and keep the reference as an extra:
+# "Clients are capped at 10 requests a second (#12)." pull-me adds the repository's reference patterns.
+extends: existence
+message: "'%s' is a bare reference: say in your own words what it says, and keep the reference as an extra."
+level: error
+scope: sentence
+nonword: true
+tokens:
+  - '^(?:[Ss]ee|[Pp]er|[Aa]s in|[Cc]f\.?)\s+(?:REFERENCE)'
+  - '^(?:\S+\s+){0,2}(?:REFERENCE)(?:(?:,|\s+and|\s+or)?\s+(?:REFERENCE))*[\s.,;:!?)]*$'

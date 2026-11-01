@@ -7,7 +7,17 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 
-import { parseFrontMatter, readItemFolder, readLineList, runImport, shortTitle } from "../src/importer";
+import {
+  importRefused,
+  parseFrontMatter,
+  readItemFolder,
+  readLineList,
+  runImport,
+  shortTitle,
+  updatedBody,
+} from "../src/importer";
+import { sectionsFor } from "../src/templates";
+import { ValeFinding } from "../src/vale";
 
 import { CONFIG, setup } from "./fake";
 
@@ -17,8 +27,17 @@ function tmp(files: Record<string, string>): string {
   return dir;
 }
 
-const ITEM = (id: string, extra: string): string =>
-  `---\nid: ${id}\ntitle: "Title ${id}"\npriority: P1\n${extra}\n---\n\n# Title ${id}\n\nBody of ${id}.\n`;
+/** A body with every section of a type, each with a sentence (`##` headings: the importer writes them as `###`). */
+const SECTIONS = (type: string, id: string): string =>
+  sectionsFor(type)
+    .map(s => `## ${s.label}\n\n${s.label} of ${id}.`)
+    .join("\n\n");
+
+const ITEM = (id: string, extra: string, type = /type: (\w+)/.exec(extra)?.[1] ?? "task"): string =>
+  `---\nid: ${id}\ntitle: "Title ${id}"\npriority: P1\n${extra}\n---\n\n# Title ${id}\n\n${SECTIONS(type, id)}\n`;
+
+/** The issue check without Vale: the structure rules only (the prose rules have their own tests). */
+const NO_VALE = { root: os.tmpdir(), vale: false };
 
 describe("adapters", () => {
   test("front matter", () => {
@@ -47,7 +66,8 @@ describe("adapters", () => {
       component: "game",
       design: ["docs/design/x.md"],
     });
-    expect(records[0].body).toBe("Body of child.\n\nDecisions: 16, 17");
+    expect(records[0].body).toMatch(/^### Why\n\nWhy of child\.\n\n### Context/);
+    expect(records[0].body).toMatch(/What of child\.\n\nDecisions: 16, 17$/);
     expect(records[1]).toMatchObject({ type: "Epic", component: "engine", priority: "P1" });
   });
 
@@ -111,9 +131,9 @@ describe("adapters", () => {
       ["pricing-tiers", "Two tiers or three"],
       ["dark-mode", "A dark theme"],
     ]);
-    expect(records[0].body).toBe("(2026-10-01, branch feat/export) · Export the report as CSV.");
+    expect(records[0].body).toBe("### What\n\n(2026-10-01, branch feat/export) · Export the report as CSV.");
     expect(records[1].body).toContain("(also the API)");
-    expect(records[4].body).toBe("A dark theme.");
+    expect(records[4].body).toBe("### What\n\nA dark theme.");
   });
 
   test("line list: an item's own priority", () => {
@@ -225,14 +245,19 @@ describe("runImport", () => {
         "- **export-pdf** · After export-csv, export-html: the same report as PDF.",
       ].join("\n"),
     });
-    const dry = await runImport(backlog, readLineList(CONFIG, path.join(dir, "backlog.md")), { dryRun: true });
+    const records = readLineList(CONFIG, path.join(dir, "backlog.md"));
+    expect(records[1].dependsOn).toEqual(["export-csv"]);
+    // A line only fills What and carries no type: the issue check refuses every record, and says why.
+    const dry = await runImport(backlog, records, { dryRun: true, check: NO_VALE });
     expect(dry).toEqual(
       expect.arrayContaining([
-        "blocked by export-pdf -> export-csv",
+        "refuse export-csv: 1 error(s)",
+        expect.stringContaining("[PI001] The issue has no type."),
         'warn export-pdf: depends on "export-html", not an item in this file',
       ])
     );
-    expect(dry.some(l => l.includes("-> export-html"))).toBe(false);
+    expect(dry.some(l => l.startsWith("create"))).toBe(false);
+    expect(importRefused(dry)).toBe(true);
   });
 
   test("creates, links and is idempotent", async () => {
@@ -241,14 +266,14 @@ describe("runImport", () => {
       "epic.md": ITEM("epic", "type: epic"),
       "a.md": ITEM("a", "type: feature\nparent: epic\nagent: helper"),
       "b.md": ITEM("b", "type: bug\nparent: epic\ndepends_on: [a, missing]"),
-      "c.md": ITEM("c", "status: done"),
+      "c.md": ITEM("c", "type: task\nstatus: done"),
     });
     const records = readItemFolder(CONFIG, dir);
-    const dry = await runImport(backlog, records, { dryRun: true });
+    const dry = await runImport(backlog, records, { dryRun: true, check: NO_VALE });
     expect(dry.filter(l => l.startsWith("create"))).toHaveLength(3);
     expect(api.issues.size).toBe(0);
 
-    const first = await runImport(backlog, records);
+    const first = await runImport(backlog, records, { check: NO_VALE });
     expect(first).toEqual(
       expect.arrayContaining([
         "created #1 a",
@@ -262,12 +287,86 @@ describe("runImport", () => {
     expect(b).toMatchObject({ status: "blocked", parent: 3, blockedBy: [1], type: "Bug" });
     expect(b.body).toContain("<!-- plan-me:id=b -->");
 
-    const again = await runImport(backlog, records);
+    const again = await runImport(backlog, records, { check: NO_VALE });
     expect(again.filter(l => !l.startsWith("exists") && !l.startsWith("warn"))).toEqual([]);
     expect(api.issues.size).toBe(3);
 
-    await runImport(backlog, records, { done: "closed" });
+    await runImport(backlog, records, { done: "closed", check: NO_VALE });
     const c = await backlog.show("c");
     expect(c).toMatchObject({ open: false, status: "done" });
+  });
+});
+
+describe("the issue check on import", () => {
+  test("a record without its sections is refused, the others are created; dry runs list the problems", async () => {
+    const { api, backlog } = setup();
+    const dir = tmp({
+      "good.md": ITEM("good", "type: task"),
+      "bad.md": "---\nid: bad\ntitle: Notes\ntype: feature\n---\n\nsome working notes\n",
+      "untyped.md": ITEM("untyped", "status: open"),
+    });
+    const records = readItemFolder(CONFIG, dir);
+    const dry = await runImport(backlog, records, { dryRun: true, check: NO_VALE });
+    expect(dry).toEqual(
+      expect.arrayContaining([
+        "refuse bad: 1 error(s)",
+        expect.stringMatching(/^ {2}line 1: error: \[PI004\] The body has no sections/),
+        "refuse untyped: 1 error(s)",
+        "create good [P1 open] Title good",
+      ])
+    );
+    const lines = await runImport(backlog, records, { check: NO_VALE });
+    expect(lines).toContain("created #1 good");
+    expect(api.issues.size).toBe(1);
+    expect(importRefused(lines)).toBe(true);
+    expect((await backlog.show("good")).body).toContain("### Why\n\nWhy of good.");
+  });
+
+  test("the prose findings are warnings: the record is created with warn lines", async () => {
+    const { backlog } = setup();
+    const dir = tmp({ "a.md": ITEM("a", "type: task") });
+    const vale = async (bodies: string[]): Promise<ValeFinding[][]> =>
+      bodies.map(() => [{ rule: "DevBuildDeploy.Weasel", line: 3, column: 1, message: "'very' weakens it" }]);
+    const lines = await runImport(backlog, readItemFolder(CONFIG, dir), { check: { root: os.tmpdir(), vale } });
+    expect(lines).toEqual(["created #1 a", "warn a: line 3: warning: [DevBuildDeploy.Weasel] 'very' weakens it"]);
+  });
+
+  test("--update rewrites the title, body and type of an existing issue, keeping the lines added since", async () => {
+    const { api, backlog } = setup();
+    const raw = api.add({
+      title: "notes",
+      body: "some working notes\n\n<!-- plan-me:id=a -->\n\nParent: #7\n",
+    });
+    const dir = tmp({ "a.md": ITEM("a", "type: bug") });
+    const records = readItemFolder(CONFIG, dir);
+    expect(await runImport(backlog, records, { check: NO_VALE })).toContain(`exists #${raw.number} a`);
+    const dry = await runImport(backlog, records, { update: true, dryRun: true, check: NO_VALE });
+    expect(dry).toContain(`update #${raw.number} a: title, body, type`);
+    expect(api.issues.get(raw.number)?.title).toBe("notes");
+
+    const lines = await runImport(backlog, records, { update: true, check: NO_VALE });
+    expect(lines[0]).toMatch(new RegExp(`^updated #${raw.number} a: title; body; type; priority - -> P1`));
+    const after = api.issues.get(raw.number);
+    expect(after).toMatchObject({ title: "Title a", issueType: "Bug" });
+    expect(after?.body).toContain("### Steps to reproduce\n\nSteps to reproduce of a.");
+    expect(after?.body).toContain("<!-- plan-me:id=a -->");
+    expect(after?.body).toMatch(/Parent: #7\n$/);
+    expect(await runImport(backlog, records, { update: true, check: NO_VALE })).toEqual([`exists #${raw.number} a`]);
+  });
+
+  test("--update refuses a record that fails the check and leaves the issue alone", async () => {
+    const { api, backlog } = setup();
+    const raw = api.add({ title: "notes", body: "x\n\n<!-- plan-me:id=a -->\n" });
+    const dir = tmp({ "a.md": "---\nid: a\ntitle: Better\ntype: task\n---\n\nstill notes\n" });
+    const lines = await runImport(backlog, readItemFolder(CONFIG, dir), { update: true, check: NO_VALE });
+    expect(lines[0]).toBe("refuse a: 1 error(s)");
+    expect(api.issues.get(raw.number)?.title).toBe("notes");
+  });
+
+  test("updatedBody keeps the lines plan-me and pull requests add", () => {
+    const current = "old\n\nBranch: feat/1-x\n\nBlocked by #3\n\n- [ ] #9\n\nDecision: docs/decisions/a.md\n";
+    expect(updatedBody("new\n", current)).toBe(
+      "new\n\nBranch: feat/1-x\n\nBlocked by #3\n\n- [ ] #9\n\nDecision: docs/decisions/a.md\n"
+    );
   });
 });

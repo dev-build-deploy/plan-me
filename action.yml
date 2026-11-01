@@ -21,6 +21,18 @@ inputs:
     required: false
     default: '.plan-me.json'
 
+  issue-check:
+    description: >
+      Check the text of opened and edited issues (type, the sections of the type, the prose with Vale): annotations
+      and one comment on the issue listing the problems. "false" turns it off.
+    required: false
+    default: 'true'
+
+  issue-check-label:
+    description: 'A label added to issues that fail the issue check (removed once they pass); empty: no label.'
+    required: false
+    default: ''
+
 outputs:
   changes:
     description: 'The changes made, as a JSON list of lines (e.g. ["#12 in-progress (#40)"])'

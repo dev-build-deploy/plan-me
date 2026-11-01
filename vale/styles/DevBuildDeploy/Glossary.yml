@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2026 Kevin de Jong <monkaii@hotmail.com>
+# SPDX-License-Identifier: MIT
+
+# A glossary term must be explained where it is used: followed by a parenthesis, a colon, a dash, or a comma and
+# "a", "an" or "the" ("Vale, a linter for prose").
+# pull-me fills in the terms from the shipped glossary, the repository's glossary file and .pull-me.json.
+extends: conditional
+message: "Explain '%s' the first time you use it: the reader may not know the term."
+level: warning
+ignorecase: true
+first: '\b(GLOSSARY)\b'
+second: '\b(GLOSSARY)\b\s*(?:\(|:|—|–| - |,\s+(?:a|an|the)\s)'

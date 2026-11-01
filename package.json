@@ -21,7 +21,7 @@
     "build": "run-p build:*",
     "build:cli": "ncc build -o lib/cli src/entrypoints/cli.ts",
     "build:action": "ncc build -o lib/action src/entrypoints/action.ts",
-    "build:plugin": "ncc build -o claude-plugin/bundle src/entrypoints/cli.ts",
+    "build:plugin": "ncc build -o claude-plugin/bundle src/entrypoints/cli.ts && node scripts/copy-vale.mjs claude-plugin/bundle/vale",
     "test": "jest --coverage",
     "lint": "eslint --ext .ts .",
     "format": "prettier --write **/*.ts && prettier --write **/**/*.ts",
