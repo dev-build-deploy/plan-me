@@ -21,6 +21,9 @@ by default, `--json` everywhere, idempotent commands, and a local snapshot to gr
 - **Import**: a folder of markdown item files with front matter, or a markdown line list; rerunnable.
 - **Decisions**: one file per decision in `docs/decisions/`, a generated index in `docs/decisions.md`, a check for
   the Action and pre-commit; no configuration (below).
+- **Issue templates**: an issue form per type (Bug: steps, expected vs actual, version, evidence; Feature: goal,
+  acceptance criteria, design docs; ...) with the component, Priority, Role and Size, which the Action copies to the
+  board; no configuration (below).
 
 ```sh
 $ plan-me snapshot
@@ -68,7 +71,7 @@ The Action is pinned with its tag (`uses: dev-build-deploy/plan-me@v0.3.0`). Det
 - **Idempotent**: every command can be retried; a second run reports `#12 unchanged`. `new --id <id>` returns the
   existing item instead of creating a duplicate.
 - **Decisions**: grep `docs/decisions.md` (one line per decision); follow only the current and amended ones.
-- **MCP**: `plan-me mcp` serves next, list, show, snapshot, new, start, block, decide, done and the decisions commands as tools with JSON
+- **MCP**: `plan-me mcp` serves next, list, show, snapshot, new, start, block, decide, done, the decisions and the templates commands as tools with JSON
   schemas; each answers in the compact text unless called with `json: true`. See [docs/mcp.md](./docs/mcp.md).
 
 ## Decisions
@@ -144,6 +147,32 @@ Commit the file; Claude Code then offers to install the plugin from the
   - The session starts with one note: `plan-me snapshot --out` to read the backlog, `plan-me next` for the next job.
 - **The skill** `working-with-plan-me`: how an agent reads the backlog, starts work, asks the user, records a
   decision and finishes.
+
+## Issue templates
+
+`plan-me init` (or `plan-me templates`) writes a GitHub issue form per configured type into `.github/ISSUE_TEMPLATE/`
+(`feature.yml`, `bug.yml`, `task.yml`, `design.yml`, `decision.yml`, `epic.yml`) and a `config.yml` (blank issues off),
+from the configuration and with no extra settings:
+
+- **Sections per type**: Feature (Goal, Acceptance criteria, Design docs), Bug (Steps to reproduce, Expected, Actual,
+  Version, Evidence), Task, Design, Decision (Question, Options, Who decides: opens as needs-decision, answered with
+  `decide --question`), Epic (Outcome, Child items).
+- **The plan-me fields**: a Component dropdown from `boards`, and Priority, Role and Size. The form sets the
+  organization's issue type (else the `type:` label); the Action copies the answers to the labels and the board when
+  the issue is opened.
+- **Rerunnable**: unchanged files report `up to date`; a form edited by hand is left alone (`--force` overwrites it);
+  `plan-me templates check` for CI and the `plan-me-templates` pre-commit hook; SPDX headers from `.reuse-me.json`.
+
+```sh
+$ plan-me templates
+write .github/ISSUE_TEMPLATE/feature.yml
+...
+write .github/ISSUE_TEMPLATE/config.yml
+$ plan-me templates
+.github/ISSUE_TEMPLATE up to date
+```
+
+The guide: [docs/cli.md](./docs/cli.md#issue-templates).
 
 ## Configuration
 

@@ -3,8 +3,10 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { Backlog } from "./backlog";
+import { Backlog, FieldValues } from "./backlog";
+import { componentLabel, SelectField } from "./config";
 import { Item } from "./item";
+import { COMPONENT_HEADING, parseFormAnswers } from "./templates";
 
 /** The parts of a pull request event plan-me reads. */
 export interface PullRequestInfo {
@@ -124,4 +126,50 @@ export async function onIssueClosed(backlog: Backlog, number: number): Promise<s
   const outcome = await backlog.done(number);
   if (outcome.changed) lines.push(`#${number} done`);
   return [...lines, ...(await sweep(backlog))];
+}
+
+/** The option key for a form answer (an option name or key); free text for a field without options. */
+function optionKey(field: SelectField, answer: string | undefined): string | undefined {
+  if (answer === undefined) return undefined;
+  const options = Object.entries(field.options);
+  if (options.length === 0) return answer;
+  return options.find(([key, name]) => name === answer || key === answer)?.[0];
+}
+
+/**
+ * An issue was opened from one of plan-me's issue forms: its answers become the board fields and labels. The
+ * Component answer adds the component label (unless the issue already has one); Priority, Role and Size (the
+ * configured field names) set the board fields; a Decision opens as needs-decision. An issue without form answers
+ * (opened by `new`, or a blank issue) is left to the sweep. Returns one line per change.
+ */
+export async function onIssueOpened(backlog: Backlog, number: number): Promise<string[]> {
+  const config = backlog.config;
+  const item = await backlog.show(number);
+  const answers = parseFormAnswers(item.body);
+  const f = config.fields;
+  const headings = [COMPONENT_HEADING, f.priority.name, f.role.name, f.size.name];
+  if (!headings.some(h => h in answers)) return [];
+  const lines: string[] = [];
+  let component = item.component;
+  const chosen = answers[COMPONENT_HEADING];
+  const labelled = item.labels.some(l => l.startsWith(config.componentLabelPrefix));
+  if (chosen && config.boards[chosen] && !labelled) {
+    await backlog.api.addLabels(number, [componentLabel(config, chosen)]);
+    lines.push(`#${number} component ${chosen}`);
+    component = chosen;
+  }
+  if (!config.boards[component]) return lines; // no board for its component: like the sweep, left alone
+  const values: Omit<FieldValues, "status"> = {
+    priority: optionKey(f.priority, answers[f.priority.name]),
+    role: optionKey(f.role, answers[f.role.name]),
+    size: optionKey(f.size, answers[f.size.name]),
+  };
+  const outcome = await backlog.update(number, values);
+  if (outcome.changed) lines.push(`#${number} ${outcome.actions.join("; ")}`);
+  const decision = config.types.find(t => t.toLowerCase() === "decision");
+  if (decision && outcome.item.type === decision && outcome.item.status === "open") {
+    await backlog.setStatus(number, "needs-decision");
+    lines.push(`#${number} needs-decision`);
+  }
+  return lines;
 }

@@ -19,6 +19,7 @@ import { DEFAULT_DRIVER_COMMAND, installMergeDriver, runMergeDriver } from "../d
 import { GitHubApi, OctokitLike } from "../github";
 import { readItemFolder, readLineList, runImport } from "../importer";
 import { runMcpServer } from "../mcp";
+import { writeTemplates } from "../templates";
 import { configVersionWarning, VERSION } from "../version";
 
 type Globals = { config: string; repo?: string; json?: boolean; version?: boolean };
@@ -49,7 +50,8 @@ function print(g: Globals, text: string, json: unknown): void {
 async function run(cmd: Command, name: CommandName, args: Record<string, unknown>): Promise<void> {
   const g = cmd.optsWithGlobals<Globals>();
   const spec = COMMANDS[name];
-  const result = await spec.run({ backlog: () => backlogFor(g), root: process.cwd() }, args as never);
+  const ctx = { backlog: () => backlogFor(g), root: process.cwd(), config: () => loadConfig(g.config, g.repo) };
+  const result = await spec.run(ctx, args as never);
   if (result.warning) process.stderr.write(`${result.warning}\n`);
   print(g, result.text, result.json);
   if (result.failed) process.exitCode = 1;
@@ -96,16 +98,30 @@ function withFilters(cmd: Command): Command {
 
 program
   .command("init")
-  .description("Create the missing boards, fields, options and labels (idempotent)")
+  .description("Create the missing boards, fields, options and labels, enable the Claude Code plugin and write the issue forms (idempotent)")
   .option("--dry-run", "Only print what would be created")
   .action(async (opts: { dryRun?: boolean }, cmd: Command) => {
     const g = cmd.optsWithGlobals<Globals>();
-    const actions = [
-      ...installClaudeSettings(process.cwd(), !!opts.dryRun),
-      ...(await backlogFor(g).init(!!opts.dryRun)),
-    ];
-    print(g, actions.length > 0 ? actions.join("\n") : "up to date", { actions, dryRun: !!opts.dryRun });
+    const backlog = backlogFor(g);
+    const dryRun = !!opts.dryRun;
+    const actions = [...installClaudeSettings(process.cwd(), dryRun), ...(await backlog.init(dryRun))];
+    const { issueTypes } = await backlog.api.features();
+    const templates = writeTemplates(process.cwd(), backlog.config, { issueTypes, dryRun });
+    const lines = [...actions, ...templates.actions, ...templates.skipped];
+    print(g, lines.length > 0 ? lines.join("\n") : "up to date", { actions, templates, dryRun });
   });
+
+const templates = program
+  .command("templates")
+  .description("Write the issue forms (.github/ISSUE_TEMPLATE/) from the configuration (idempotent)")
+  .option("--force", "Overwrite forms edited by hand")
+  .option("--dry-run", "Only print what would be written")
+  .action(async (opts: { force?: boolean; dryRun?: boolean }, cmd: Command) => run(cmd, "templates", opts));
+
+templates
+  .command("check")
+  .description("Fail when a generated issue form is missing, stale or for a type no longer configured")
+  .action(async (_opts: unknown, cmd: Command) => run(cmd, "templates_check", {}));
 
 program
   .command("new <title>")
@@ -289,7 +305,10 @@ program
     const g = cmd.optsWithGlobals<Globals>();
     // Started by an MCP client in a subfolder (the Claude Code plugin): work from the folder holding the config.
     process.chdir(findRoot(process.cwd(), g.config));
-    await runMcpServer(() => backlogFor(g));
+    await runMcpServer(
+      () => backlogFor(g),
+      () => loadConfig(g.config, g.repo)
+    );
   });
 
 program.parseAsync().catch((e: Error) => {

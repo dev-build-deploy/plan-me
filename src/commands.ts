@@ -6,10 +6,11 @@
 import { z } from "zod";
 
 import { Backlog, Filters, Outcome } from "./backlog";
-import { STATUSES } from "./config";
+import { Config, STATUSES } from "./config";
 import { checkDecisions, DEFAULT_DECISIONS, formatIndexLine, recordDecision, writeIndex } from "./decisions";
 import { IMPORT_FORMATS, importDecisions } from "./decisions-import";
 import { formatItem, Item } from "./item";
+import { checkTemplates, TEMPLATE_DIR, TemplatesOutcome, writeTemplates } from "./templates";
 
 /** A command's output: compact text (the default) and the same data as JSON (`--json`, MCP). */
 export interface CommandResult {
@@ -32,6 +33,31 @@ export const DECIDE_DEPRECATED =
 export interface CommandContext {
   backlog: () => Backlog;
   root: string;
+  /** The configuration without the backlog (no token needed); default the backlog's. */
+  config?: () => Config;
+}
+
+/** The configuration of a context. */
+function configOf(ctx: CommandContext): Config {
+  return ctx.config ? ctx.config() : ctx.backlog().config;
+}
+
+/**
+ * The organization's issue types, when the API can be reached (a token); undefined otherwise, so the templates keep
+ * the kind each file has (an issue type or the type label).
+ */
+export async function issueTypesOf(ctx: CommandContext): Promise<string[] | undefined> {
+  try {
+    return (await ctx.backlog().api.features()).issueTypes;
+  } catch (_e) {
+    return undefined;
+  }
+}
+
+/** The text of a `templates` run: the changes, the files left alone, or `up to date`. */
+export function templatesText(o: TemplatesOutcome): string {
+  const lines = [...o.actions, ...o.skipped];
+  return lines.length > 0 ? lines.join("\n") : `${TEMPLATE_DIR} up to date`;
 }
 
 /** A command shared by the CLI and the MCP server: one description, one input schema, one implementation. */
@@ -223,6 +249,33 @@ export const COMMANDS = {
     run: async ctx => {
       const problems = checkDecisions(ctx.root);
       const text = problems.length > 0 ? problems.join("\n") : `${DEFAULT_DECISIONS.dir}: ok`;
+      return { text, json: { problems }, failed: problems.length > 0 };
+    },
+  }),
+  templates: define({
+    description:
+      "Write the issue forms (.github/ISSUE_TEMPLATE/<type>.yml, one per configured type, and config.yml) from the " +
+      "configuration; idempotent. A form edited by hand is left alone unless force",
+    input: {
+      force: z.boolean().optional().describe("Overwrite forms edited by hand (or not written by plan-me)"),
+      dryRun: z.boolean().optional().describe("Only print what would be written"),
+    },
+    mutates: true,
+    run: async (ctx, a) => {
+      const config = configOf(ctx);
+      const outcome = writeTemplates(ctx.root, config, { ...a, issueTypes: await issueTypesOf(ctx) });
+      return { text: templatesText(outcome), json: { ...outcome, dryRun: !!a.dryRun } };
+    },
+  }),
+  templates_check: define({
+    description:
+      "Check the issue forms against the configuration: fails with one line per generated form that is missing, " +
+      "stale or for a type no longer configured (forms edited by hand pass)",
+    input: {},
+    mutates: false,
+    run: async ctx => {
+      const problems = checkTemplates(ctx.root, configOf(ctx), { issueTypes: await issueTypesOf(ctx) });
+      const text = problems.length > 0 ? problems.join("\n") : `${TEMPLATE_DIR}: ok`;
       return { text, json: { problems }, failed: problems.length > 0 };
     },
   }),

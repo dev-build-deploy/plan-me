@@ -33,7 +33,11 @@ Everything except `repository` has a default; in the Action `repository` default
   "epicType": "Epic",
   "labels": [{ "name": "agent-ready", "color": "0e8a16", "description": "Ready for an agent" }],
   "branchPattern": "(?:^|/)(\\d+)(?=[-_/]|$)",
-  "version": ">=0.3.0"
+  "version": ">=0.3.0",
+  "templates": {
+    "blankIssues": false,
+    "contactLinks": [{ "name": "Questions", "url": "https://github.com/octo-org/notes/discussions", "about": "Ask here" }]
+  }
 }
 ```
 
@@ -51,6 +55,7 @@ Everything except `repository` has a default; in the Action `repository` default
 | `types` | Feature, Bug, Task, Design, Decision, Epic | The item types. Each uses the organization's issue type of that name when it exists, else the label `type:<name>`. |
 | `epicType` | `Epic` | The type `next` skips and the snapshot marks `epic`. |
 | `labels` | `[]` | Extra labels `init` creates (strings or `{name, color, description}`). |
+| `templates` | on; `blankIssues` false, `contactLinks` `[]` | The issue forms `templates` and `init` write ([cli.md](./cli.md#issue-templates)): one per type in `types`, with the `boards` and `fields`. `false` turns them off (nothing written or checked). `blankIssues`: whether the chooser also offers a blank issue; `contactLinks`: links in the chooser (`{name, url, about}`). |
 | `branchPattern` | `(?:^\|/)(\d+)(?=[-_/]\|$)` | The Action's regex for the issue number in a branch name (`feat/12-x`, `12-x`). |
 | `version` | none | The plan-me versions this repository works with, a semver range (`>=0.3.0`, `^0.3`). The CLI warns on stderr (the Action as a warning annotation) when it does not satisfy it, naming the release to install. Only a warning: the command still runs. |
 

@@ -48831,6 +48831,8 @@ function findRoot(cwd, configFile = config_1.CONFIG_FILE) {
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.COMMANDS = exports.DECIDE_DEPRECATED = void 0;
+exports.issueTypesOf = issueTypesOf;
+exports.templatesText = templatesText;
 exports.itemsResult = itemsResult;
 exports.outcomeResult = outcomeResult;
 const zod_1 = __nccwpck_require__(50924);
@@ -48838,8 +48840,30 @@ const config_1 = __nccwpck_require__(22973);
 const decisions_1 = __nccwpck_require__(19816);
 const decisions_import_1 = __nccwpck_require__(13344);
 const item_1 = __nccwpck_require__(38736);
+const templates_1 = __nccwpck_require__(63340);
 /** The warning for the old `decide <ref> --question "<text>"` form. */
 exports.DECIDE_DEPRECATED = 'warning: `decide <ref> --question "<text>"` is deprecated and will be removed: use `plan-me ask <ref> "<question>"`';
+/** The configuration of a context. */
+function configOf(ctx) {
+    return ctx.config ? ctx.config() : ctx.backlog().config;
+}
+/**
+ * The organization's issue types, when the API can be reached (a token); undefined otherwise, so the templates keep
+ * the kind each file has (an issue type or the type label).
+ */
+async function issueTypesOf(ctx) {
+    try {
+        return (await ctx.backlog().api.features()).issueTypes;
+    }
+    catch (_e) {
+        return undefined;
+    }
+}
+/** The text of a `templates` run: the changes, the files left alone, or `up to date`. */
+function templatesText(o) {
+    const lines = [...o.actions, ...o.skipped];
+    return lines.length > 0 ? lines.join("\n") : `${templates_1.TEMPLATE_DIR} up to date`;
+}
 const ref = zod_1.z.union([zod_1.z.string(), zod_1.z.number()]).describe("The issue: 12, #12 or an id from the hidden marker");
 const filters = {
     component: zod_1.z.string().optional().describe("Only this component"),
@@ -49011,6 +49035,31 @@ exports.COMMANDS = {
             return { text, json: { problems }, failed: problems.length > 0 };
         },
     }),
+    templates: define({
+        description: "Write the issue forms (.github/ISSUE_TEMPLATE/<type>.yml, one per configured type, and config.yml) from the " +
+            "configuration; idempotent. A form edited by hand is left alone unless force",
+        input: {
+            force: zod_1.z.boolean().optional().describe("Overwrite forms edited by hand (or not written by plan-me)"),
+            dryRun: zod_1.z.boolean().optional().describe("Only print what would be written"),
+        },
+        mutates: true,
+        run: async (ctx, a) => {
+            const config = configOf(ctx);
+            const outcome = (0, templates_1.writeTemplates)(ctx.root, config, { ...a, issueTypes: await issueTypesOf(ctx) });
+            return { text: templatesText(outcome), json: { ...outcome, dryRun: !!a.dryRun } };
+        },
+    }),
+    templates_check: define({
+        description: "Check the issue forms against the configuration: fails with one line per generated form that is missing, " +
+            "stale or for a type no longer configured (forms edited by hand pass)",
+        input: {},
+        mutates: false,
+        run: async (ctx) => {
+            const problems = (0, templates_1.checkTemplates)(ctx.root, configOf(ctx), { issueTypes: await issueTypesOf(ctx) });
+            const text = problems.length > 0 ? problems.join("\n") : `${templates_1.TEMPLATE_DIR}: ok`;
+            return { text, json: { problems }, failed: problems.length > 0 };
+        },
+    }),
     decisions_import: define({
         description: "Convert an old numbered decision list into one file per decision (keeping the numbers), then regenerate the " +
             "index; rerunnable. Formats: numbered (`129. **Title** (2026-11-01, the user): text`), labelled " +
@@ -49125,6 +49174,11 @@ function resolveConfig(raw, repository) {
         labels,
         branchPattern: raw.branchPattern ?? DEFAULT_BRANCH_PATTERN,
         version: raw.version,
+        templates: {
+            enabled: raw.templates !== false,
+            blankIssues: (typeof raw.templates === "object" && raw.templates.blankIssues) || false,
+            contactLinks: (typeof raw.templates === "object" && raw.templates.contactLinks) || [],
+        },
     };
 }
 /**
@@ -49990,6 +50044,7 @@ const decisions_merge_1 = __nccwpck_require__(58777);
 const github_2 = __nccwpck_require__(69248);
 const importer_1 = __nccwpck_require__(72277);
 const mcp_1 = __nccwpck_require__(98471);
+const templates_1 = __nccwpck_require__(63340);
 const version_1 = __nccwpck_require__(311);
 /** The token: GITHUB_TOKEN, GH_TOKEN, or the GitHub CLI's (`gh auth token`). */
 function token() {
@@ -50016,7 +50071,8 @@ function print(g, text, json) {
 async function run(cmd, name, args) {
     const g = cmd.optsWithGlobals();
     const spec = commands_1.COMMANDS[name];
-    const result = await spec.run({ backlog: () => backlogFor(g), root: process.cwd() }, args);
+    const ctx = { backlog: () => backlogFor(g), root: process.cwd(), config: () => (0, config_1.loadConfig)(g.config, g.repo) };
+    const result = await spec.run(ctx, args);
     if (result.warning)
         process.stderr.write(`${result.warning}\n`);
     print(g, result.text, result.json);
@@ -50064,16 +50120,28 @@ function withFilters(cmd) {
 }
 program
     .command("init")
-    .description("Create the missing boards, fields, options and labels (idempotent)")
+    .description("Create the missing boards, fields, options and labels, enable the Claude Code plugin and write the issue forms (idempotent)")
     .option("--dry-run", "Only print what would be created")
     .action(async (opts, cmd) => {
     const g = cmd.optsWithGlobals();
-    const actions = [
-        ...(0, claude_1.installClaudeSettings)(process.cwd(), !!opts.dryRun),
-        ...(await backlogFor(g).init(!!opts.dryRun)),
-    ];
-    print(g, actions.length > 0 ? actions.join("\n") : "up to date", { actions, dryRun: !!opts.dryRun });
+    const backlog = backlogFor(g);
+    const dryRun = !!opts.dryRun;
+    const actions = [...(0, claude_1.installClaudeSettings)(process.cwd(), dryRun), ...(await backlog.init(dryRun))];
+    const { issueTypes } = await backlog.api.features();
+    const templates = (0, templates_1.writeTemplates)(process.cwd(), backlog.config, { issueTypes, dryRun });
+    const lines = [...actions, ...templates.actions, ...templates.skipped];
+    print(g, lines.length > 0 ? lines.join("\n") : "up to date", { actions, templates, dryRun });
 });
+const templates = program
+    .command("templates")
+    .description("Write the issue forms (.github/ISSUE_TEMPLATE/) from the configuration (idempotent)")
+    .option("--force", "Overwrite forms edited by hand")
+    .option("--dry-run", "Only print what would be written")
+    .action(async (opts, cmd) => run(cmd, "templates", opts));
+templates
+    .command("check")
+    .description("Fail when a generated issue form is missing, stale or for a type no longer configured")
+    .action(async (_opts, cmd) => run(cmd, "templates_check", {}));
 program
     .command("new <title>")
     .description("Create an item")
@@ -50232,7 +50300,7 @@ program
     const g = cmd.optsWithGlobals();
     // Started by an MCP client in a subfolder (the Claude Code plugin): work from the folder holding the config.
     process.chdir((0, claude_1.findRoot)(process.cwd(), g.config));
-    await (0, mcp_1.runMcpServer)(() => backlogFor(g));
+    await (0, mcp_1.runMcpServer)(() => backlogFor(g), () => (0, config_1.loadConfig)(g.config, g.repo));
 });
 program.parseAsync().catch((e) => {
     process.stderr.write(`error: ${e.message}\n`);
@@ -51085,7 +51153,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.REUSE_ME_CONFIG = void 0;
 exports.globToRegExp = globToRegExp;
+exports.licenseLines = licenseLines;
 exports.licenseHeader = licenseHeader;
+exports.yamlLicenseHeader = yamlLicenseHeader;
 const fs_1 = __importDefault(__nccwpck_require__(79896));
 const path_1 = __importDefault(__nccwpck_require__(16928));
 /** reuse-me's configuration file in the repository root. */
@@ -51124,15 +51194,16 @@ const matches = (globs, rel) => (globs ?? []).some(g => globToRegExp(g).test(rel
 /** The tag prefix, built from parts so no line of this source starts with an SPDX tag (reuse-me reads those). */
 const TAG = "SPDX-";
 /**
- * The SPDX header for a file, as an HTML comment, when the repository has a `.reuse-me.json`: the holder and licence
- * of its first rule matching the path (else its defaults; else the only licence in `LICENSES/`). Undefined without
- * `.reuse-me.json`, for an excluded path, or when no holder or licence is known.
+ * The SPDX tag lines for a file (`<tag>FileCopyrightText: ...`, `<tag>License-Identifier: ...`) when the repository has
+ * a `.reuse-me.json`: the holder and licence of its first rule matching the path (else its defaults; else the only
+ * licence in `LICENSES/`). Undefined without `.reuse-me.json`, for an excluded path, or when no holder or licence is
+ * known.
  * @param root The repository root
  * @param rel The file's path relative to the root (forward slashes)
  * @param year The copyright year when the rule gives none (for a decision: the year it was decided, so the output
  *   doesn't change with the calendar)
  */
-function licenseHeader(root, rel, year) {
+function licenseLines(root, rel, year) {
     const file = path_1.default.join(root, exports.REUSE_ME_CONFIG);
     if (!fs_1.default.existsSync(file))
         return undefined;
@@ -51149,8 +51220,17 @@ function licenseHeader(root, rel, year) {
         return undefined;
     const y = String(rule?.year ?? d.year ?? year);
     const holders = (Array.isArray(holder) ? holder : [holder]).map(h => (/^\d{4}/.test(h) ? h : `${y} ${h}`));
-    const lines = [...holders.map(h => `${TAG}FileCopyrightText: ${h}`), `${TAG}License-Identifier: ${license}`];
-    return ["<!--", ...lines, "-->"].join("\n");
+    return [...holders.map(h => `${TAG}FileCopyrightText: ${h}`), `${TAG}License-Identifier: ${license}`];
+}
+/** The SPDX header for a markdown file, as an HTML comment (licenseLines); undefined when there is none. */
+function licenseHeader(root, rel, year) {
+    const lines = licenseLines(root, rel, year);
+    return lines && ["<!--", ...lines, "-->"].join("\n");
+}
+/** The SPDX header for a YAML file, as `#` comment lines (licenseLines); undefined when there is none. */
+function yamlLicenseHeader(root, rel, year) {
+    const lines = licenseLines(root, rel, year);
+    return lines && lines.map(l => `# ${l}`).join("\n");
 }
 
 
@@ -51183,9 +51263,10 @@ exports.MCP_VERSION = version_1.VERSION;
  * Builds the MCP server with one tool per command. Each tool answers with the compact text by default, or the JSON
  * when called with `json: true`.
  * @param makeBacklog Returns the backlog to run against (a fresh one per call, so nothing is stale)
- * @param root The repository root holding the decision files (default the working directory)
+ * @param root The repository root holding the decision files and issue forms (default the working directory)
+ * @param makeConfig Returns the configuration without a backlog (no token); default the backlog's
  */
-function createMcpServer(makeBacklog, root = process.cwd()) {
+function createMcpServer(makeBacklog, root = process.cwd(), makeConfig) {
     const server = new mcp_js_1.McpServer({ name: "plan-me", version: exports.MCP_VERSION });
     for (const [name, spec] of Object.entries(commands_1.COMMANDS)) {
         server.registerTool(name, {
@@ -51195,7 +51276,7 @@ function createMcpServer(makeBacklog, root = process.cwd()) {
         }, async (args) => {
             try {
                 const { json, ...rest } = args;
-                const result = await spec.run({ backlog: makeBacklog, root }, rest);
+                const result = await spec.run({ backlog: makeBacklog, root, config: makeConfig }, rest);
                 const out = json ? JSON.stringify(result.json) : result.text;
                 const text = result.warning ? `${result.warning}\n${out}` : out;
                 return { content: [{ type: "text", text }], ...(result.failed ? { isError: true } : {}) };
@@ -51208,8 +51289,381 @@ function createMcpServer(makeBacklog, root = process.cwd()) {
     return server;
 }
 /** Runs the MCP server on stdio until the client disconnects. */
-async function runMcpServer(makeBacklog) {
-    await createMcpServer(makeBacklog).connect(new stdio_js_1.StdioServerTransport());
+async function runMcpServer(makeBacklog, makeConfig) {
+    await createMcpServer(makeBacklog, process.cwd(), makeConfig).connect(new stdio_js_1.StdioServerTransport());
+}
+
+
+/***/ }),
+
+/***/ 63340:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+/*
+ * SPDX-FileCopyrightText: 2026 Kevin de Jong <monkaii@hotmail.com>
+ * SPDX-License-Identifier: MIT
+ */
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.TYPE_SPECS = exports.COMPONENT_HEADING = exports.CHOOSER_FILE = exports.TEMPLATE_DIR = void 0;
+exports.sectionsFor = sectionsFor;
+exports.formFor = formFor;
+exports.chooserConfig = chooserConfig;
+exports.templateFileName = templateFileName;
+exports.fileState = fileState;
+exports.templateFiles = templateFiles;
+exports.writeTemplates = writeTemplates;
+exports.checkTemplates = checkTemplates;
+exports.parseFormAnswers = parseFormAnswers;
+const crypto_1 = __nccwpck_require__(76982);
+const fs_1 = __importDefault(__nccwpck_require__(79896));
+const path_1 = __importDefault(__nccwpck_require__(16928));
+const config_1 = __nccwpck_require__(22973);
+const decisions_1 = __nccwpck_require__(19816);
+const license_1 = __nccwpck_require__(19764);
+/** The folder GitHub reads issue forms from, relative to the repository root. */
+exports.TEMPLATE_DIR = ".github/ISSUE_TEMPLATE";
+/** The chooser's configuration file in TEMPLATE_DIR. */
+exports.CHOOSER_FILE = "config.yml";
+/** The heading of the component dropdown (the board fields use their configured names: Priority, Role, Size). */
+exports.COMPONENT_HEADING = "Component";
+const DESIGN_DOCS = {
+    label: "Design docs",
+    description: "Paths in the repository or links, one per line.",
+    placeholder: "docs/design/sync.md",
+};
+/**
+ * The sections per type (keys lowercase), in form order. They are the headings an issue body has (`### Goal`), so
+ * `new` and `import` can write the same ones; other types get TYPE_SPECS.other.
+ */
+exports.TYPE_SPECS = {
+    feature: {
+        description: "A new capability, or a change to one",
+        sections: [
+            { label: "Goal", description: "What should be possible, and for whom?", required: true },
+            { label: "Acceptance criteria", description: "When is it done?", placeholder: "- [ ] ..." },
+            DESIGN_DOCS,
+        ],
+    },
+    bug: {
+        description: "Something does not work as it should",
+        sections: [
+            { label: "Steps to reproduce", placeholder: "1. ...\n2. ...\n3. ...", required: true },
+            { label: "Expected", description: "What should happen?" },
+            { label: "Actual", description: "What happens instead?", required: true },
+            { label: "Version", kind: "input", description: "The version, build or commit it happens on." },
+            { label: "Evidence", description: "Logs, screenshots, a failing test: paste or drag them here." },
+        ],
+    },
+    task: {
+        description: "A piece of work that is neither a feature nor a bug",
+        sections: [
+            { label: "What to do", required: true },
+            { label: "Done when", placeholder: "- [ ] ..." },
+        ],
+    },
+    design: {
+        description: "Work out how something should look or behave before it is built",
+        sections: [
+            { label: "Problem", description: "What needs designing, and why now?", required: true },
+            { label: "Constraints", description: "What the design must respect." },
+            { label: "Options", description: "The directions considered so far." },
+            DESIGN_DOCS,
+        ],
+    },
+    decision: {
+        description: "A question someone has to decide",
+        intro: "A decision issue opens as needs-decision. Record the answer with " +
+            '`plan-me decide "<text>" --title "<title>" --by "<who>" --question <this issue>`: the pull request that adds ' +
+            "the decision file closes this issue.",
+        sections: [
+            { label: "Question", description: "The question, in one or two sentences.", required: true },
+            { label: "Options", description: "The options, with their pros and cons.", placeholder: "1. ...\n2. ..." },
+            { label: "Who decides", kind: "input", description: "The person or role who decides." },
+            { label: "Context", description: "Why it comes up now; related issues and decisions." },
+        ],
+    },
+    epic: {
+        description: "A larger outcome, split into child items",
+        sections: [
+            { label: "Outcome", description: "What is true when the epic is done?", required: true },
+            {
+                label: "Child items",
+                description: "One per line; or add sub-issues once the epic exists.",
+                placeholder: "- [ ] #12",
+            },
+            DESIGN_DOCS,
+        ],
+    },
+    other: {
+        description: "",
+        sections: [{ label: "Description", required: true }],
+    },
+};
+/** The text sections of a type's form (the built-in ones, else a single Description). */
+function sectionsFor(type) {
+    return (exports.TYPE_SPECS[type.toLowerCase()] ?? exports.TYPE_SPECS.other).sections;
+}
+const PLAIN = /^[A-Za-z][\w .,;:()/'?-]*$/;
+const RESERVED = /^(?:y|n|yes|no|on|off|true|false|null|~)$/i;
+function scalar(v) {
+    if (typeof v !== "string")
+        return String(v);
+    return PLAIN.test(v) && !RESERVED.test(v) && !/[ :]$/.test(v) && !/: | #/.test(v) ? v : JSON.stringify(v);
+}
+function yaml(v, indent) {
+    if (Array.isArray(v)) {
+        return v.flatMap(item => {
+            const lines = yaml(item, `${indent}  `);
+            if (typeof item !== "object")
+                return [`${indent}- ${lines[0].trimStart()}`];
+            return [`${indent}- ${lines[0].trimStart()}`, ...lines.slice(1)];
+        });
+    }
+    if (typeof v === "object") {
+        const out = [];
+        for (const [key, value] of Object.entries(v)) {
+            if (value === undefined)
+                continue;
+            if (typeof value === "string" && value.includes("\n")) {
+                out.push(`${indent}${key}: |-`, ...value.split("\n").map(l => (l ? `${indent}  ${l}` : "")));
+            }
+            else if (Array.isArray(value) && value.length === 0) {
+                out.push(`${indent}${key}: []`);
+            }
+            else if (typeof value === "object") {
+                out.push(`${indent}${key}:`, ...yaml(value, Array.isArray(value) ? indent : `${indent}  `));
+            }
+            else {
+                out.push(`${indent}${key}: ${scalar(value)}`);
+            }
+        }
+        return out;
+    }
+    return [`${indent}${scalar(v)}`];
+}
+// --- the forms ---
+const HASH_LINE = /^# plan-me:sha256=([0-9a-f]+)[ \t]*\r?\n/m;
+const YEAR = /FileCopyrightText:\s*(\d{4})/;
+const NATIVE = /^type:/m;
+/** The hash of a file's text without its hash line: it tells a generated file from one edited by hand. */
+function hashOf(text) {
+    const lf = text.replace(/\r\n/g, "\n").replace(HASH_LINE, "");
+    return (0, crypto_1.createHash)("sha256").update(lf).digest("hex").slice(0, 16);
+}
+const GENERATED = [
+    "# Generated by plan-me from its configuration (types, boards, fields): run `plan-me templates` after changing it.",
+    "# plan-me leaves this file alone once it is edited by hand; `plan-me templates --force` overwrites it.",
+];
+/** The licence header (when `.reuse-me.json` gives one), the generated-file comment with the hash, then the YAML. */
+function withHeader(body, license) {
+    const text = [...(license ? [license, ""] : []), ...GENERATED, "", body].join("\n");
+    const last = GENERATED[GENERATED.length - 1];
+    return text.replace(`${last}\n`, `${last}\n# plan-me:sha256=${hashOf(text)}\n`);
+}
+function slug(label) {
+    return (0, decisions_1.slugify)(label.replace(/[^\w ]/g, " ")).replace(/-/g, "_");
+}
+/** The form elements for the board fields: Component (more than one board), Priority, Role, Size. */
+function fieldElements(config) {
+    const out = [];
+    const components = Object.keys(config.boards);
+    if (components.length > 1) {
+        const dflt = components.indexOf(config.defaultComponent);
+        out.push({
+            type: "dropdown",
+            id: "component",
+            attributes: {
+                label: exports.COMPONENT_HEADING,
+                description: "The part of the product it is about (its board).",
+                options: components,
+                default: dflt >= 0 ? dflt : undefined,
+            },
+        });
+    }
+    const f = config.fields;
+    const select = (id, field, description) => {
+        const options = Object.values(field.options);
+        const dflt = field.default !== undefined ? options.indexOf(field.options[field.default] ?? field.default) : -1;
+        return {
+            type: "dropdown",
+            id,
+            attributes: { label: field.name, description, options, default: dflt >= 0 ? dflt : undefined },
+        };
+    };
+    out.push(select("priority", f.priority, `${Object.values(f.priority.options)[0]} is the most urgent.`));
+    const roleHelp = "The role that does it.";
+    if (Object.keys(f.role.options).length > 0)
+        out.push(select("role", f.role, roleHelp));
+    else
+        out.push({ type: "input", id: "role", attributes: { label: f.role.name, description: roleHelp } });
+    out.push(select("size", f.size, "A rough size."));
+    return out;
+}
+function sectionElement(s) {
+    return {
+        type: s.kind ?? "textarea",
+        id: slug(s.label),
+        attributes: { label: s.label, description: s.description, placeholder: s.placeholder },
+        validations: s.required ? { required: true } : undefined,
+    };
+}
+/** The issue form for one type (without its header). */
+function formFor(config, type, native) {
+    const spec = exports.TYPE_SPECS[type.toLowerCase()] ?? { ...exports.TYPE_SPECS.other, description: `A ${type.toLowerCase()}` };
+    const numbered = Object.values(config.boards).filter(b => b.number !== undefined);
+    const one = Object.keys(config.boards).length === 1 && numbered.length === 1;
+    const form = {
+        name: type,
+        description: spec.description,
+        type: native,
+        labels: native ? undefined : [(0, config_1.typeLabel)(config, type)],
+        projects: one ? [`${config.owner}/${numbered[0].number}`] : undefined,
+        body: [
+            ...(spec.intro ? [{ type: "markdown", attributes: { value: spec.intro } }] : []),
+            ...spec.sections.map(sectionElement),
+            ...fieldElements(config),
+        ],
+    };
+    return `${yaml(form, "").join("\n")}\n`;
+}
+/** The chooser's configuration: blank issues on or off, contact links. */
+function chooserConfig(config) {
+    const links = config.templates.contactLinks.map(l => ({ name: l.name, url: l.url, about: l.about }));
+    return `${yaml({ blank_issues_enabled: config.templates.blankIssues, contact_links: links }, "").join("\n")}\n`;
+}
+/** The file name of a type's form: `<slug>.yml` (`bug.yml`, `feature.yml`). */
+function templateFileName(type) {
+    const name = (0, decisions_1.slugify)(type);
+    return name === "config" ? "type-config.yml" : `${name}.yml`;
+}
+/** The state of a template file (the hash line tells generated from hand-edited). */
+function fileState(text) {
+    if (text === undefined)
+        return "missing";
+    const m = HASH_LINE.exec(text);
+    if (!m)
+        return "foreign";
+    return hashOf(text) === m[1] ? "generated" : "edited";
+}
+function readFile(root, rel) {
+    const file = path_1.default.join(root, rel);
+    return fs_1.default.existsSync(file) ? fs_1.default.readFileSync(file, "utf8") : undefined;
+}
+/** The files plan-me would write (empty when templates are off), given what is on disk now. */
+function templateFiles(root, config, opts = {}) {
+    if (!config.templates.enabled)
+        return [];
+    const make = (rel, body, existing) => {
+        const year = (existing && YEAR.exec(existing)?.[1]) ?? opts.year ?? (0, decisions_1.today)().slice(0, 4);
+        return withHeader(body, (0, license_1.yamlLicenseHeader)(root, rel, year));
+    };
+    const files = [];
+    for (const type of config.types) {
+        const rel = path_1.default.posix.join(exports.TEMPLATE_DIR, templateFileName(type));
+        const existing = readFile(root, rel);
+        let native;
+        if (opts.issueTypes)
+            native = opts.issueTypes.find(t => t.toLowerCase() === type.toLowerCase());
+        else if (existing && fileState(existing) === "generated" && NATIVE.test(existing))
+            native = type;
+        files.push({ path: rel, type, content: make(rel, formFor(config, type, native), existing) });
+    }
+    const chooser = path_1.default.posix.join(exports.TEMPLATE_DIR, exports.CHOOSER_FILE);
+    files.push({ path: chooser, content: make(chooser, chooserConfig(config), readFile(root, chooser)) });
+    return files;
+}
+/** The generated files in TEMPLATE_DIR that no configured type writes any more. */
+function leftovers(root, files) {
+    const dir = path_1.default.join(root, exports.TEMPLATE_DIR);
+    if (!fs_1.default.existsSync(dir))
+        return [];
+    const wanted = new Set(files.map(f => f.path));
+    return fs_1.default
+        .readdirSync(dir)
+        .filter(n => /\.ya?ml$/.test(n))
+        .sort()
+        .map(n => path_1.default.posix.join(exports.TEMPLATE_DIR, n))
+        .filter(rel => !wanted.has(rel) && fileState(readFile(root, rel)) === "generated");
+}
+/**
+ * Writes the issue forms and the chooser configuration. Idempotent: an up-to-date file is not touched; a file edited
+ * by hand (or not written by plan-me) is left alone unless `force`; a generated file for a type no longer configured
+ * is removed.
+ */
+function writeTemplates(root, config, opts = {}) {
+    const files = templateFiles(root, config, opts);
+    const out = { actions: [], skipped: [] };
+    const would = opts.dryRun ? "would " : "";
+    for (const f of files) {
+        const existing = readFile(root, f.path);
+        const state = fileState(existing);
+        if (existing === f.content)
+            continue;
+        if ((state === "edited" || state === "foreign") && !opts.force) {
+            const why = state === "edited" ? "edited by hand" : "not written by plan-me";
+            out.skipped.push(`${f.path} ${why}: left alone (--force overwrites)`);
+            continue;
+        }
+        out.actions.push(`${would}${state === "missing" ? "write" : "update"} ${f.path}`);
+        if (opts.dryRun)
+            continue;
+        fs_1.default.mkdirSync(path_1.default.dirname(path_1.default.join(root, f.path)), { recursive: true });
+        fs_1.default.writeFileSync(path_1.default.join(root, f.path), f.content);
+    }
+    for (const rel of leftovers(root, files)) {
+        out.actions.push(`${would}remove ${rel}`);
+        if (!opts.dryRun)
+            fs_1.default.unlinkSync(path_1.default.join(root, rel));
+    }
+    return out;
+}
+/**
+ * Checks the templates against the configuration: one line per generated file that is missing, stale or no longer
+ * configured. Files edited by hand are fine (plan-me leaves them alone). A repository whose TEMPLATE_DIR holds no
+ * file plan-me generated doesn't use the templates and passes; so does one with `"templates": false`.
+ */
+function checkTemplates(root, config, opts = {}) {
+    const dir = path_1.default.join(root, exports.TEMPLATE_DIR);
+    if (!config.templates.enabled || !fs_1.default.existsSync(dir))
+        return [];
+    const used = fs_1.default.readdirSync(dir).some(n => HASH_LINE.test(readFile(root, path_1.default.posix.join(exports.TEMPLATE_DIR, n)) ?? ""));
+    if (!used)
+        return [];
+    const problems = [];
+    const files = templateFiles(root, config, opts);
+    for (const f of files) {
+        const existing = readFile(root, f.path);
+        const state = fileState(existing);
+        if (state === "missing")
+            problems.push(`${f.path}: missing; run \`plan-me templates\``);
+        else if (state === "generated" && existing !== f.content) {
+            problems.push(`${f.path}: stale (the configuration changed); run \`plan-me templates\``);
+        }
+    }
+    for (const rel of leftovers(root, files)) {
+        problems.push(`${rel}: its type is no longer configured; run \`plan-me templates\``);
+    }
+    return problems;
+}
+// --- reading a submitted form ---
+/**
+ * The answers of a submitted issue form: GitHub writes each element as `### <label>` and the answer (`_No response_`
+ * when left empty, which is left out here). Keyed by the heading.
+ */
+function parseFormAnswers(body) {
+    const out = {};
+    const parts = body.replace(/\r\n/g, "\n").split(/^### +(.+?)[ \t]*$/m);
+    for (let i = 1; i < parts.length; i += 2) {
+        const answer = parts[i + 1].trim();
+        if (answer && answer !== "_No response_" && answer !== "None")
+            out[parts[i]] = answer;
+    }
+    return out;
 }
 
 
@@ -51292,6 +51746,14 @@ module.exports = require("assert");
 
 "use strict";
 module.exports = require("child_process");
+
+/***/ }),
+
+/***/ 76982:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("crypto");
 
 /***/ }),
 
@@ -95913,7 +96375,7 @@ module.exports = /*#__PURE__*/JSON.parse('{"$schema":"http://json-schema.org/dra
 /***/ ((module) => {
 
 "use strict";
-module.exports = /*#__PURE__*/JSON.parse('{"name":"plan-me","version":"0.3.0","private":false,"description":"Deterministic GitHub backlog management (Issues + Projects v2) for humans and LLMs","author":"Kevin de Jong","license":"MIT","homepage":"https://github.com/dev-build-deploy/plan-me","keywords":["github","action","backlog","projects","mcp","claude-code"],"bugs":{"url":"https://github.com/dev-build-deploy/plan-me/issues"},"scripts":{"build":"run-p build:*","build:cli":"ncc build -o lib/cli src/entrypoints/cli.ts","build:action":"ncc build -o lib/action src/entrypoints/action.ts","build:plugin":"ncc build -o claude-plugin/bundle src/entrypoints/cli.ts","test":"jest --coverage","lint":"eslint --ext .ts .","format":"prettier --write **/*.ts && prettier --write **/**/*.ts","test:plugin":"claude plugin test claude-plugin","setup-hooks":"pre-commit install --hook-type pre-commit --hook-type commit-msg"},"bin":{"plan-me":"./bin/plan-me"},"engines":{"node":">=24"},"dependencies":{"@actions/core":"^1.11.1","@actions/github":"^6.0.1","@modelcontextprotocol/sdk":"^1.32.2","commander":"^12.1.0","semver":"^7.8.5","zod":"^4.6.7"},"devDependencies":{"@types/jest":"^29.5.14","@types/node":"^24.19.2","@types/semver":"^7.8.0","@typescript-eslint/eslint-plugin":"^8.72.0","@typescript-eslint/parser":"^8.72.0","@vercel/ncc":"^0.45.0","eslint":"^8.57.1","eslint-import-resolver-typescript":"^3.10.1","eslint-plugin-import":"^2.32.0","eslint-plugin-jest":"^28.14.0","jest":"^29.7.0","npm-run-all2":"^6.2.6","prettier":"^3.9.10","ts-jest":"^29.4.15","typescript":"^5.9.3"},"overrides":{"undici":"^6.29.1"}}');
+module.exports = /*#__PURE__*/JSON.parse('{"name":"plan-me","version":"0.3.0","private":false,"description":"Deterministic GitHub backlog management (Issues + Projects v2) for humans and LLMs","author":"Kevin de Jong","license":"MIT","homepage":"https://github.com/dev-build-deploy/plan-me","keywords":["github","action","backlog","projects","mcp","claude-code"],"bugs":{"url":"https://github.com/dev-build-deploy/plan-me/issues"},"scripts":{"build":"run-p build:*","build:cli":"ncc build -o lib/cli src/entrypoints/cli.ts","build:action":"ncc build -o lib/action src/entrypoints/action.ts","build:plugin":"ncc build -o claude-plugin/bundle src/entrypoints/cli.ts","test":"jest --coverage","lint":"eslint --ext .ts .","format":"prettier --write **/*.ts && prettier --write **/**/*.ts","test:plugin":"claude plugin test claude-plugin","setup-hooks":"pre-commit install --hook-type pre-commit --hook-type commit-msg"},"bin":{"plan-me":"./bin/plan-me"},"engines":{"node":">=24"},"dependencies":{"@actions/core":"^1.11.1","@actions/github":"^6.0.1","@modelcontextprotocol/sdk":"^1.32.2","commander":"^12.1.0","semver":"^7.8.5","zod":"^4.6.7"},"devDependencies":{"@types/jest":"^29.5.14","@types/js-yaml":"^4.0.9","@types/node":"^24.19.2","@types/semver":"^7.8.0","@typescript-eslint/eslint-plugin":"^8.72.0","@typescript-eslint/parser":"^8.72.0","@vercel/ncc":"^0.45.0","eslint":"^8.57.1","eslint-import-resolver-typescript":"^3.10.1","eslint-plugin-import":"^2.32.0","eslint-plugin-jest":"^28.14.0","jest":"^29.7.0","js-yaml":"^4.3.2","npm-run-all2":"^6.2.6","prettier":"^3.9.10","ts-jest":"^29.4.15","typescript":"^5.9.3"},"overrides":{"undici":"^6.29.1"}}');
 
 /***/ })
 

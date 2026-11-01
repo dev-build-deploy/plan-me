@@ -29,6 +29,22 @@ export interface LabelConfig {
   description?: string;
 }
 
+/** A link in the issue template chooser (`contact_links` in `.github/ISSUE_TEMPLATE/config.yml`). */
+export interface ContactLink {
+  name: string;
+  url: string;
+  about: string;
+}
+
+/** The issue templates plan-me writes (`.github/ISSUE_TEMPLATE/`). */
+export interface TemplatesConfig {
+  /** `false` in the configuration: plan-me writes and checks no templates. */
+  enabled: boolean;
+  /** Whether the chooser offers a blank issue next to the forms. */
+  blankIssues: boolean;
+  contactLinks: ContactLink[];
+}
+
 /** The resolved configuration (all defaults applied). */
 export interface Config {
   repository: string;
@@ -50,6 +66,7 @@ export interface Config {
   branchPattern: string;
   /** The plan-me versions this repository works with (a semver range); the CLI warns when it doesn't satisfy it. */
   version?: string;
+  templates: TemplatesConfig;
 }
 
 /** The configuration file name looked up in the working directory. */
@@ -82,6 +99,7 @@ type RawConfig = {
   labels?: (string | LabelConfig)[];
   branchPattern?: string;
   version?: string;
+  templates?: boolean | { blankIssues?: boolean; contactLinks?: ContactLink[] };
 };
 
 function toOptions(raw: Record<string, string> | string[] | undefined, fallback: string[]): Record<string, string> {
@@ -135,6 +153,11 @@ export function resolveConfig(raw: RawConfig, repository?: string): Config {
     labels,
     branchPattern: raw.branchPattern ?? DEFAULT_BRANCH_PATTERN,
     version: raw.version,
+    templates: {
+      enabled: raw.templates !== false,
+      blankIssues: (typeof raw.templates === "object" && raw.templates.blankIssues) || false,
+      contactLinks: (typeof raw.templates === "object" && raw.templates.contactLinks) || [],
+    },
   };
 }
 
