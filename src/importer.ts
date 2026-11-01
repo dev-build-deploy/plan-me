@@ -101,8 +101,8 @@ function mapComponent(config: Config, areas: string[], fallback?: string): strin
 }
 
 /**
- * A short title from free text: up to the first sentence end (or a colon after at least TITLE_MIN_CLAUSE
- * characters), outside brackets and quotes, cut at a word boundary.
+ * A short title from free text: up to the first sentence end (`.`, or `?` and `!`, which stay; or a colon after at
+ * least TITLE_MIN_CLAUSE characters), outside brackets and quotes, cut at a word boundary.
  */
 export function shortTitle(text: string): string {
   let depth = 0;
@@ -113,9 +113,9 @@ export function shortTitle(text: string): string {
     if ("([{".includes(c)) depth++;
     else if (")]}".includes(c)) depth = Math.max(0, depth - 1);
     else if (c === '"') quoted = !quoted;
-    const breaks = text[i + 1] === " " && (c === "." || (c === ":" && i >= TITLE_MIN_CLAUSE));
+    const breaks = text[i + 1] === " " && (".?!".includes(c) || (c === ":" && i >= TITLE_MIN_CLAUSE));
     if (breaks && depth === 0 && !quoted) {
-      end = i;
+      end = "?!".includes(c) ? i + 1 : i;
       break;
     }
   }
@@ -171,6 +171,26 @@ const SEPARATOR = /^[·:.–—-]\s*/;
 /** Further ids joined to a line-list item's id: `+ **other-id**`. */
 const JOINED_IDS = /^(?:\+\s*\*\*[\w.-]+\*\*\s*)+/;
 
+/** An id named in a line list's text (no trailing dot, so a sentence end is not part of it). */
+const NAMED_ID = String.raw`[\w-]+(?:\.[\w-]+)*`;
+/** A list of named ids: `a`, `a, b`, `a and b`. */
+const NAMED_IDS = String.raw`${NAMED_ID}(?:\s*(?:,|\band\b)\s*${NAMED_ID})*`;
+/** The leading status phrases of a line-list item, and the status each one sets. */
+const STATUS_PHRASES: [RegExp, Status][] = [
+  [/^In progress\b/i, "in-progress"],
+  [/^Needs (?:a )?decision\b/i, "needs-decision"],
+  [new RegExp(String.raw`^Blocked\b(?:\s+by\s+${NAMED_IDS})?`, "i"), "blocked"],
+];
+
+/** The status a leading phrase sets ("In progress", "Needs a decision", "Blocked by x"), and the text after it. */
+function leadingStatus(text: string): { status?: Status; rest: string } {
+  for (const [phrase, status] of STATUS_PHRASES) {
+    const m = phrase.exec(text);
+    if (m) return { status, rest: skipLead(text.slice(m[0].length)) };
+  }
+  return { rest: text };
+}
+
 /** The text after a leading balanced `(...)` group (brackets may nest); the text itself when there is none. */
 function skipMeta(text: string): string {
   if (!text.startsWith("(")) return text;
@@ -191,8 +211,8 @@ function skipLead(text: string): string {
  * Adapter (b): a markdown line list. `## P1` headings set the priority; a `## Done` heading marks the items under it
  * done (until the next priority heading); `- **id** · text. Helper: role.` starts an item (indented lines continue
  * it). After the id may come joined ids (`+ **other-id**`, the first id is the item), a balanced `(meta)` group
- * (kept in the body, not the title) and a `·`, `-` or `:` separator. `- ~~id~~ done ...` is a done item; text
- * starting "In progress" is in-progress.
+ * (kept in the body, not the title) and a `·`, `-` or `:` separator. `- ~~id~~ done ...` is a done item. A leading
+ * "In progress", "Needs (a) decision" or "Blocked (by x)" sets the status and is left out of the title.
  */
 export function readLineList(config: Config, file: string, options: ImportOptions = {}): ImportRecord[] {
   const records: ImportRecord[] = [];
@@ -205,13 +225,12 @@ export function readLineList(config: Config, file: string, options: ImportOption
     const body = current.text.join(" ").replace(/\s+/g, " ").trim().replace(SEPARATOR, "");
     const text = skipLead(body.replace(JOINED_IDS, "").replace(/^done\b/i, ""));
     const role = /Helper: ([\w-]+)\.?\s*$/.exec(text)?.[1];
-    const inProgress = /^In progress\b/i.test(text);
-    const titleText = skipLead(text.replace(/^In progress\b/i, ""));
+    const { status, rest } = leadingStatus(text);
     records.push({
       id: current.id,
-      title: shortTitle(titleText || current.id),
+      title: shortTitle(rest || current.id),
       body,
-      status: current.done ? "done" : inProgress ? "in-progress" : "open",
+      status: current.done ? "done" : (status ?? "open"),
       priority: current.priority,
       component: options.component,
       role,
