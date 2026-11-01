@@ -1,0 +1,14 @@
+{
+  "name": "plan-me",
+  "version": "0.1.0",
+  "description": "Claude Code companion of PlanMe: the backlog and decision commands as MCP tools; denies gh issue create/edit/close and hand edits of the generated decisions index or issue forms; checks staged decision files before git commit",
+  "author": { "name": "Kevin de Jong" },
+  "homepage": "https://github.com/dev-build-deploy/plan-me",
+  "license": "MIT",
+  "mcpServers": {
+    "plan-me": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/bundle/index.js", "mcp"]
+    }
+  }
+}
