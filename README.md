@@ -19,6 +19,8 @@ by default, `--json` everywhere, idempotent commands, and a local snapshot to gr
 - **Pick-up order**: `plan-me next` gives the open, unblocked item: P1 before P2 before P3; within a priority
   in-progress and needs-decision first.
 - **Import**: a folder of markdown item files with front matter, or a markdown line list; rerunnable.
+- **Decisions**: one file per decision in `docs/decisions/`, a generated index in `docs/decisions.md`, a check for
+  the Action and pre-commit; no configuration (below).
 
 ```sh
 $ plan-me snapshot
@@ -53,8 +55,37 @@ the label.
 - **Structured output**: add `--json` to any command; mutating commands answer `{item, changed, actions}`.
 - **Idempotent**: every command can be retried; a second run reports `#12 unchanged`. `new --id <id>` returns the
   existing item instead of creating a duplicate.
-- **MCP**: `plan-me mcp` serves next, list, show, snapshot, new, start, block, decide and done as tools with JSON
+- **Decisions**: grep `docs/decisions.md` (one line per decision); follow only the current and amended ones.
+- **MCP**: `plan-me mcp` serves next, list, show, snapshot, new, start, block, decide, done and the decisions commands as tools with JSON
   schemas; each answers in the compact text unless called with `json: true`. See [docs/mcp.md](./docs/mcp.md).
+
+## Decisions
+
+Every repository using plan-me keeps its decisions the same way, with no configuration:
+
+- **One file per decision**: `docs/decisions/<date>-<id>.md`, front matter (`id`, `number` only for imported old
+  numbers such as `129` or `L99`, `date`, `by`, `status` current | amended | superseded, `superseded_by`, `scope`,
+  `summary`, `question`) and the decision in full. New decisions get no number, so parallel branches never clash.
+- **A generated index**: `docs/decisions.md`, one greppable line per decision, current first, then amended, then
+  superseded (marked with what replaces them, so nobody follows them). Never edited by hand; deterministic, so it
+  diffs cleanly.
+- **Commands**: `plan-me decide "<text>" --title ... --by ... [--question 42] [--supersedes <id>]` records one;
+  `plan-me decisions index` regenerates the index; `plan-me decisions check` fails on invalid files, colliding ids,
+  a dangling `superseded_by` or a stale index (the Action and the `plan-me-decisions` pre-commit hook run it);
+  `plan-me decisions import <file> --format numbered|labelled` converts an old numbered list, keeping its numbers.
+- **Questions**: a needs-decision issue gets the answer and the file's path from `decide --question`; the pull
+  request carrying the file closes it (`Closes #42`).
+
+```sh
+$ plan-me decide "Scripts are Lua." --title "Lua is the script language" --by "the user" --question 42
+wrote docs/decisions/2026-11-01-lua-is-the-script-language.md
+wrote docs/decisions.md
+- lua-is-the-script-language · - · 2026-11-01 · current · - · Lua is the script language
+#42 comment; decision docs/decisions/2026-11-01-lua-is-the-script-language.md; status needs-decision -> in-progress
+#42 [game P2 in-progress] Which script language?
+```
+
+The guide: [docs/decisions.md](./docs/decisions.md).
 
 ## Configuration
 

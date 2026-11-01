@@ -16,6 +16,10 @@ idempotent: rerunning an event changes nothing.
 | `issues` opened, edited, labeled, reopened | That issue is kept consistent (below). |
 | `schedule`, `workflow_dispatch` | The whole open backlog is kept consistent. |
 
+Every run, whatever the event, first runs `decisions check` on the checked-out repository: each problem becomes an
+error annotation and the run fails at the end (after the backlog work). A repository without `docs/decisions/`
+passes. See [decisions.md](./decisions.md).
+
 Consistency: an issue without a Priority gets the configured default and a comment; an issue without a Status gets
 open; a blocked issue whose blockers are all closed goes back to open (with a comment). Issues whose component has no
 board are left alone.

@@ -54,6 +54,11 @@ Everything except `repository` has a default; in the Action `repository` default
 
 Options may be given as a list (option name = key) or as a map from key to option name.
 
+## Decisions
+
+The decisions (`docs/decisions/` and the generated `docs/decisions.md`) have no settings: every repository uses the
+same paths, and the decision commands work without a `.plan-me.json`. See [decisions.md](./decisions.md).
+
 ## Authentication
 
 The CLI uses `GITHUB_TOKEN`, then `GH_TOKEN`, then `gh auth token`. Projects v2 need the `project` scope (classic
