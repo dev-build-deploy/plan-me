@@ -3,9 +3,11 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { findReferences, onIssueClosed, onPullRequest, PullRequestInfo, sweep } from "../src/automation";
+import { findReferences, onIssueClosed, onIssueOpened, onPullRequest, PullRequestInfo, sweep } from "../src/automation";
+import { Backlog } from "../src/backlog";
+import { resolveConfig } from "../src/config";
 
-import { CONFIG, setup } from "./fake";
+import { CONFIG, FakeApi, setup } from "./fake";
 
 const pr = (action: string, body: string, branch = "main", merged = false): PullRequestInfo => ({
   number: 99,
@@ -74,5 +76,59 @@ describe("issues and schedule", () => {
     expect(await sweep(backlog)).toEqual(["#1 status open", "#1 priority P2"]);
     expect(api.comments.get(1)).toEqual(["plan-me: no priority set, defaulted to P2."]);
     expect(await sweep(backlog)).toEqual([]);
+  });
+});
+
+describe("issues opened from a form", () => {
+  /** A notes app: components api, web and mobile. */
+  const notes = (): { api: FakeApi; backlog: Backlog } => {
+    const api = new FakeApi();
+    const config = resolveConfig({
+      repository: "octo-org/notes",
+      boards: { api: "API", web: "Web", mobile: "Mobile" },
+      defaultComponent: "web",
+      fields: { role: { options: ["lead", "backend", "frontend", "user"] } },
+    });
+    return { api, backlog: new Backlog(api, config) };
+  };
+
+  /** A body as GitHub writes a submitted issue form. */
+  const formBody = (answers: Record<string, string>): string =>
+    Object.entries(answers)
+      .map(([label, answer]) => `### ${label}\n\n${answer}`)
+      .join("\n\n");
+
+  test("the answers become the component label and the board fields; rerunning changes nothing", async () => {
+    const { api, backlog } = notes();
+    const body = formBody({
+      "Steps to reproduce": "1. Open a note",
+      Component: "api",
+      Priority: "P1",
+      Role: "backend",
+      Size: "_No response_",
+    });
+    api.add({ title: "Crash on open", body, issueType: "Bug" });
+    expect(await onIssueOpened(backlog, 1)).toEqual(["#1 component api", "#1 priority - -> P1; role - -> backend"]);
+    expect(api.issues.get(1)?.labels).toEqual(["component:api"]);
+    expect(api.issues.get(1)?.boards.API).toEqual({ Priority: "P1", Role: "backend" });
+    expect(await onIssueOpened(backlog, 1)).toEqual([]);
+    expect(await sweep(backlog, [1])).toEqual(["#1 status open"]);
+  });
+
+  test("an existing component label wins; unknown answers are ignored; a decision opens as needs-decision", async () => {
+    const { api, backlog } = notes();
+    const body = formBody({ Question: "Sync or not?", Component: "api", Priority: "P9", Role: "nobody" });
+    api.add({ title: "Sync?", body, labels: ["type:decision", "component:mobile"] });
+    expect(await onIssueOpened(backlog, 1)).toEqual(["#1 needs-decision"]);
+    expect(api.issues.get(1)?.labels).toEqual(["type:decision", "component:mobile"]);
+    expect((await backlog.show(1)).status).toBe("needs-decision");
+    expect(await onIssueOpened(backlog, 1)).toEqual([]);
+  });
+
+  test("an issue without form answers is left to the sweep", async () => {
+    const { api, backlog } = notes();
+    api.add({ title: "Blank", body: "Just text." });
+    expect(await onIssueOpened(backlog, 1)).toEqual([]);
+    expect(api.calls).toEqual([]);
   });
 });

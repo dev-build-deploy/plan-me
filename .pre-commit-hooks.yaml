@@ -16,3 +16,10 @@
   language: node
   pass_filenames: false
   always_run: true
+- id: plan-me-templates
+  name: PlanMe - Issue forms check
+  description: Fails when a generated issue form in .github/ISSUE_TEMPLATE/ is missing or stale for .plan-me.json
+  entry: plan-me templates check
+  language: node
+  pass_filenames: false
+  files: ^(\.plan-me\.json|\.github/ISSUE_TEMPLATE/)

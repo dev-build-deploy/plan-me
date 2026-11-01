@@ -55,15 +55,16 @@ const matches = (globs: string[] | undefined, rel: string): boolean =>
 const TAG = "SPDX-";
 
 /**
- * The SPDX header for a file, as an HTML comment, when the repository has a `.reuse-me.json`: the holder and licence
- * of its first rule matching the path (else its defaults; else the only licence in `LICENSES/`). Undefined without
- * `.reuse-me.json`, for an excluded path, or when no holder or licence is known.
+ * The SPDX tag lines for a file (`<tag>FileCopyrightText: ...`, `<tag>License-Identifier: ...`) when the repository has
+ * a `.reuse-me.json`: the holder and licence of its first rule matching the path (else its defaults; else the only
+ * licence in `LICENSES/`). Undefined without `.reuse-me.json`, for an excluded path, or when no holder or licence is
+ * known.
  * @param root The repository root
  * @param rel The file's path relative to the root (forward slashes)
  * @param year The copyright year when the rule gives none (for a decision: the year it was decided, so the output
  *   doesn't change with the calendar)
  */
-export function licenseHeader(root: string, rel: string, year: string): string | undefined {
+export function licenseLines(root: string, rel: string, year: string): string[] | undefined {
   const file = path.join(root, REUSE_ME_CONFIG);
   if (!fs.existsSync(file)) return undefined;
   const config: ReuseConfig = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -77,6 +78,17 @@ export function licenseHeader(root: string, rel: string, year: string): string |
   if (!holder || !license) return undefined;
   const y = String(rule?.year ?? d.year ?? year);
   const holders = (Array.isArray(holder) ? holder : [holder]).map(h => (/^\d{4}/.test(h) ? h : `${y} ${h}`));
-  const lines = [...holders.map(h => `${TAG}FileCopyrightText: ${h}`), `${TAG}License-Identifier: ${license}`];
-  return ["<!--", ...lines, "-->"].join("\n");
+  return [...holders.map(h => `${TAG}FileCopyrightText: ${h}`), `${TAG}License-Identifier: ${license}`];
+}
+
+/** The SPDX header for a markdown file, as an HTML comment (licenseLines); undefined when there is none. */
+export function licenseHeader(root: string, rel: string, year: string): string | undefined {
+  const lines = licenseLines(root, rel, year);
+  return lines && ["<!--", ...lines, "-->"].join("\n");
+}
+
+/** The SPDX header for a YAML file, as `#` comment lines (licenseLines); undefined when there is none. */
+export function yamlLicenseHeader(root: string, rel: string, year: string): string | undefined {
+  const lines = licenseLines(root, rel, year);
+  return lines && lines.map(l => `# ${l}`).join("\n");
 }

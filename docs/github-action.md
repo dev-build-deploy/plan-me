@@ -13,12 +13,19 @@ idempotent: rerunning an event changes nothing.
 | `pull_request` opened, edited, synchronize, reopened, ready_for_review | The issues it references move to in-progress: `Closes #n` (fixes, resolves), `Part of #n`, or the number in the branch name (`feat/12-x`; or a branch whose last segment is an item's marker id). |
 | `pull_request` closed and merged | `Closes` and branch issues: a Done comment ("Merged in #PR."), closed, status done. `Part of` issues stay in-progress. |
 | `issues` closed | Status done; dependents whose blockers are now all closed go from blocked back to open, with a comment. |
-| `issues` opened, edited, labeled, reopened | That issue is kept consistent (below). |
+| `issues` opened | An issue from one of plan-me's forms: its Component answer becomes the component label (unless it has one), its Priority, Role and Size answers the board fields; a Decision becomes needs-decision. Then it is kept consistent (below). |
+| `issues` edited, labeled, reopened | That issue is kept consistent (below). |
 | `schedule`, `workflow_dispatch` | The whole open backlog is kept consistent. |
 
 Every run, whatever the event, first runs `decisions check` on the checked-out repository: each problem becomes an
 error annotation and the run fails at the end (after the backlog work). A repository without `docs/decisions/`
-passes. See [decisions.md](./decisions.md).
+passes. See [decisions.md](./decisions.md). Likewise `templates check`: a generated issue form that is missing or
+stale for the configuration fails the run; a repository without plan-me's forms passes.
+
+Form answers: GitHub writes a submitted form as `### <label>` headings with the answers. The Action reads the
+`Component` heading and the headings named after the Priority, Role and Size fields (`fields.*.name`); an answer that
+is no option of its field, or left empty (`_No response_`), is ignored. Only `opened` reads them, so later edits of the
+body never overwrite the board.
 
 Every run also runs `claude check`: a repository with the configuration file must enable the plan-me Claude Code
 plugin in `.claude/settings.json` (`plan-me claude install`, or `plan-me init`). Each missing setting becomes an error

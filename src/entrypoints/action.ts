@@ -6,12 +6,13 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 
-import { onIssueClosed, onPullRequest, sweep } from "../automation";
+import { onIssueClosed, onIssueOpened, onPullRequest, sweep } from "../automation";
 import { Backlog } from "../backlog";
 import { checkClaudeSettings } from "../claude";
-import { loadConfig } from "../config";
+import { Config, loadConfig } from "../config";
 import { checkDecisions } from "../decisions";
 import { GitHubApi, OctokitLike } from "../github";
+import { checkTemplates } from "../templates";
 import { versionWarning } from "../version";
 
 type PullRequestPayload = { number: number; merged?: boolean; body?: string | null; head: { ref: string } };
@@ -32,9 +33,28 @@ async function handle(backlog: Backlog): Promise<string[]> {
   if (eventName === "issues" && payload.issue) {
     const number: number = payload.issue.number;
     if (payload.action === "closed") return onIssueClosed(backlog, number);
-    return sweep(backlog, [number]);
+    const form = payload.action === "opened" ? await onIssueOpened(backlog, number) : [];
+    return [...form, ...(await sweep(backlog, [number]))];
   }
   return sweep(backlog);
+}
+
+/** The checked-out repository. */
+function workspace(): string {
+  return process.env.GITHUB_WORKSPACE ?? process.cwd();
+}
+
+/**
+ * `templates check` on the checked-out repository: one error annotation per problem. A repository without plan-me's
+ * issue forms passes.
+ * @returns Whether the forms are up to date
+ */
+async function checkTemplateFiles(backlog: Backlog, config: Config): Promise<boolean> {
+  const { issueTypes } = await backlog.api.features();
+  const problems = checkTemplates(workspace(), config, { issueTypes });
+  problems.forEach(p => core.error(p));
+  if (problems.length > 0) core.info(`plan-me: ${problems.length} issue form problem(s)`);
+  return problems.length === 0;
 }
 
 /**
@@ -43,8 +63,7 @@ async function handle(backlog: Backlog): Promise<string[]> {
  * @returns Whether the decisions are clean
  */
 function checkDecisionFiles(): boolean {
-  const root = process.env.GITHUB_WORKSPACE ?? process.cwd();
-  const problems = checkDecisions(root);
+  const problems = checkDecisions(workspace());
   problems.forEach(p => core.error(p));
   core.info(problems.length > 0 ? `plan-me: ${problems.length} decision problem(s)` : "plan-me: decisions ok");
   return problems.length === 0;
@@ -79,8 +98,10 @@ async function run(): Promise<void> {
     lines.forEach(l => core.info(l));
     if (lines.length === 0) core.info("plan-me: nothing to change");
     core.setOutput("changes", JSON.stringify(lines));
+    const templatesClean = await checkTemplateFiles(backlog, config);
     if (!decisionsClean) core.setFailed("plan-me: the decisions check failed (run `plan-me decisions check`)");
     if (!pluginClean) core.setFailed("plan-me: the Claude Code plugin is not enabled (run `plan-me claude install`)");
+    if (!templatesClean) core.setFailed("plan-me: the issue forms are stale (run `plan-me templates`)");
   } catch (e) {
     core.setFailed((e as Error).message);
   }

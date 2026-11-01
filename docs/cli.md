@@ -37,7 +37,8 @@ plan-me does not satisfy it, with the install command for the wanted release.
 | `-V, --version` | Prints the version (with `--json` as `{"version": ...}`) |
 
 The decision commands (`decide`, `decisions ...`) and `claude ...` work on the files under the current directory and
-need no configuration or token, except `decide --question`.
+need no configuration or token, except `decide --question`. `templates` and `templates check` need the configuration; a
+token only to look up the organization's issue types (below).
 
 An item reference (`<ref>`) is `12`, `#12`, or the id from an item's hidden marker (`<!-- plan-me:id=walk-rocks -->`,
 set by `new --id` and `import`).
@@ -46,7 +47,9 @@ set by `new --id` and `import`).
 
 | Command | What it does |
 | --- | --- |
-| `init [--dry-run]` | Creates the missing boards (one per component, linked to the repository), fields, options and labels, and enables the Claude Code plugin (`claude install`). Existing options are kept. Prints one line per action, or `up to date`. |
+| `init [--dry-run]` | Creates the missing boards (one per component, linked to the repository), fields, options and labels, enables the Claude Code plugin (`claude install`) and writes the issue forms (`templates`). Existing options are kept. Prints one line per action, or `up to date`. |
+| `templates [--force] [--dry-run]` | Writes the issue forms: `.github/ISSUE_TEMPLATE/<type>.yml` per configured type and `config.yml` (see below). Unchanged files are left alone (`up to date`); a form edited by hand is left alone unless `--force`; a generated form for a type no longer configured is removed. |
+| `templates check` | One line per problem and exit code 1: a generated form missing, stale or for a type no longer configured. Forms edited by hand pass; a repository without plan-me's forms passes. |
 | `new <title> [--body t] [--type T] [--priority P] [--component c] [--role r] [--size s] [--parent ref] [--blocked-by ref]... [--design path]... [--id id]` | Creates an item: labels, issue type, board fields, sub-issue of its epic, dependencies (status blocked while a blocker is open), design doc links in the body. With `--id` it is idempotent. |
 | `start <ref> [--branch b]` | Status in-progress; the branch as a `Branch: b` line in the body. |
 | `block <ref> --by <ref>` | A "blocked by" dependency; status blocked while the blocker is open. |
@@ -78,6 +81,49 @@ $ plan-me start 12 --branch feat/12-lab
 $ plan-me start 12 --branch feat/12-lab
 #12 unchanged
 #12 [web P1 in-progress frontend] Editor toolbar prototype
+```
+
+## Issue templates
+
+`plan-me templates` (and `init`) writes GitHub [issue forms](https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-issue-forms)
+into `.github/ISSUE_TEMPLATE/`, so an issue opened in the GitHub UI has the same structure and fields as one made with
+`new`:
+
+| Type | Sections (`### <heading>` in the issue body) |
+| --- | --- |
+| Feature | Goal, Acceptance criteria, Design docs |
+| Bug | Steps to reproduce, Expected, Actual, Version, Evidence |
+| Task | What to do, Done when |
+| Design | Problem, Constraints, Options, Design docs |
+| Decision | Question, Options, Who decides, Context (opens as needs-decision; answered with `decide --question`) |
+| Epic | Outcome, Child items, Design docs |
+| any other type | Description |
+
+Every form then has a **Component** dropdown (the `boards`, default `defaultComponent`; only with more than one
+board) and the **Priority**, **Role** and **Size** fields (their configured names and options: dropdowns, or a text
+input for a role without options). The Action copies these answers to the labels and board fields when the issue is
+opened ([github-action.md](./github-action.md)).
+
+- **The type**: a form sets the organization's issue type (`type:`) when it has one of that name, else it adds the
+  `type:<name>` label (which `init` creates). The issue types are looked up with the token; without one, each existing
+  form keeps what it has and new forms use the label.
+- **The board**: with a single board whose `number` is configured, the form adds the issue to it (`projects:`);
+  otherwise the Action puts it on the chosen component's board.
+- **`config.yml`**: blank issues off by default and the contact links (`templates` in [config.md](./config.md)).
+- **Hand edits**: each file carries a `# plan-me:sha256=...` line, the hash of the rest of the file. A file whose hash
+  no longer matches was edited by hand, and a file without the line was not written by plan-me: both are left alone
+  (reported, not changed) unless `--force`.
+- **Licence headers**: with a `.reuse-me.json`, each file starts with the SPDX header (as `#` comments) of its matching
+  rule; a rewritten file keeps its year.
+- **CI**: `templates check` (also the `plan-me-templates` pre-commit hook and every Action run).
+
+```sh
+$ plan-me templates
+write .github/ISSUE_TEMPLATE/feature.yml
+write .github/ISSUE_TEMPLATE/bug.yml
+...
+$ plan-me templates
+.github/ISSUE_TEMPLATE up to date
 ```
 
 ## Import

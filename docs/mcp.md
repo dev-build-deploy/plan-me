@@ -22,13 +22,16 @@ TypeScript SDK). It exposes the CLI's commands as tools, with the same behaviour
 | `decisions_index` | (none) | yes |
 | `decisions_check` | (none) | no |
 | `decisions_import` | file, format, by, scope, dryRun | yes |
+| `templates` | force, dryRun | yes |
+| `templates_check` | (none) | no |
 | `done` | ref, note | yes |
 
 `ref` is a number, `#n` or a marker id. Every tool also takes `json: true` to answer with the JSON the CLI's `--json`
 prints; by default it answers with the compact text (one line per item). Read-only tools carry `readOnlyHint`, all
 carry `idempotentHint`. Errors come back as a tool error (`isError`) with one line of text; a failing
-`decisions_check` too, with one line per problem. The decision tools work on the files under the server's working
-directory ([decisions.md](./decisions.md)).
+`decisions_check` and `templates_check` too, with one line per problem. The decision and template tools work on the
+files under the server's working directory ([decisions.md](./decisions.md)); the template tools need the
+configuration but no token.
 
 ## Configuration
 

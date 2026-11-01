@@ -40,6 +40,8 @@ describe("MCP server", () => {
         "show",
         "snapshot",
         "start",
+        "templates",
+        "templates_check",
       ].sort()
     );
     const next = tools.find(t => t.name === "next");
@@ -74,6 +76,28 @@ describe("MCP server", () => {
     const bad = await client.callTool({ name: "decisions_check", arguments: {} });
     expect(bad.isError).toBe(true);
     expect((bad.content as { text: string }[])[0].text).toMatch(/^docs\/decisions\.md: stale or edited by hand/);
+    await client.close();
+  });
+});
+
+describe("MCP templates tools", () => {
+  test("templates writes the forms from the configuration, without a backlog", async () => {
+    const root = repo();
+    const { backlog } = setup();
+    const server = createMcpServer(
+      () => {
+        throw new Error("no token");
+      },
+      root,
+      () => backlog.config
+    );
+    const client = new Client({ name: "test", version: "1" });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(a), client.connect(b)]);
+    const written = await client.callTool({ name: "templates", arguments: {} });
+    expect((written.content as { text: string }[])[0].text).toContain("write .github/ISSUE_TEMPLATE/bug.yml");
+    const ok = await client.callTool({ name: "templates_check", arguments: {} });
+    expect((ok.content as { text: string }[])[0].text).toBe(".github/ISSUE_TEMPLATE: ok");
     await client.close();
   });
 });
