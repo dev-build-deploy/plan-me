@@ -37,7 +37,8 @@ export function createMcpServer(makeBacklog: () => Backlog, root: string = proce
         try {
           const { json, ...rest } = args;
           const result = await spec.run({ backlog: makeBacklog, root }, rest);
-          const text = json ? JSON.stringify(result.json) : result.text;
+          const out = json ? JSON.stringify(result.json) : result.text;
+          const text = result.warning ? `${result.warning}\n${out}` : out;
           return { content: [{ type: "text", text }], ...(result.failed ? { isError: true } : {}) };
         } catch (e) {
           return { content: [{ type: "text", text: `error: ${(e as Error).message}` }], isError: true };

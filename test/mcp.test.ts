@@ -27,6 +27,7 @@ describe("MCP server", () => {
     const { tools } = await client.listTools();
     expect(tools.map(t => t.name).sort()).toEqual(
       [
+        "ask",
         "block",
         "decide",
         "decisions_check",

@@ -17,7 +17,13 @@ export interface CommandResult {
   json: unknown;
   /** The command found problems (`decisions check`): the CLI exits with 1, the MCP tool answers as an error. */
   failed?: boolean;
+  /** A warning for the caller (a deprecated form): the CLI prints it on stderr, the MCP tool before the text. */
+  warning?: string;
 }
+
+/** The warning for the old `decide <ref> --question "<text>"` form. */
+export const DECIDE_DEPRECATED =
+  'warning: `decide <ref> --question "<text>"` is deprecated and will be removed: use `plan-me ask <ref> "<question>"`';
 
 /**
  * What a command runs against: the backlog (made on first use, so the local decision commands need no token and no
@@ -135,36 +141,43 @@ export const COMMANDS = {
     mutates: true,
     run: onBacklog(async (b, a) => outcomeResult(b, await b.block(a.ref, a.by))),
   }),
+  ask: define({
+    description:
+      "Open a question: an issue (12, #12, an id) becomes needs-decision with the question as a comment; any other " +
+      "text is a new question's title (a new issue, needs-decision, the question as its body; asking again returns it)",
+    input: {
+      ref: ref.describe("The issue (12, #12, an id), or a new question's title"),
+      question: z.string().optional().describe("The question"),
+    },
+    mutates: true,
+    run: onBacklog(async (b, a) => outcomeResult(b, await b.ask(a.ref, a.question))),
+  }),
   decide: define({
     description:
-      "Two uses. Asking: give ref (and question, the question's text): the issue becomes needs-decision. " +
-      "Recording: give text, title and by: writes docs/decisions/<date>-<id>.md and regenerates docs/decisions.md; " +
-      "question is then the issue it answers (#12): it gets the answer and the file's path, and the pull request " +
-      "carrying the file closes it (Closes #12)",
+      "Record a decision: writes docs/decisions/<date>-<id>.md and regenerates docs/decisions.md. With question " +
+      "(the issue it answers, #12), that issue gets the answer and the file's path; the pull request carrying the " +
+      "file closes it (Closes #12). To open a question, use ask",
     input: {
-      ref: ref.optional().describe("Asking: the issue that needs a decision"),
-      question: z
-        .union([z.string(), z.number()])
-        .optional()
-        .describe("Asking: the question's text. Recording: the question issue it answers (12 or #12)"),
-      text: z.string().optional().describe("Recording: the decision in full (markdown)"),
-      title: z.string().optional().describe("Recording: the title; its slug is the id"),
-      by: z.string().optional().describe("Recording: who decided"),
-      summary: z.string().optional().describe("Recording: one line for the index (default the title)"),
-      scope: z.array(z.string()).optional().describe("Recording: the areas it applies to"),
-      supersedes: z.string().optional().describe("Recording: the id of the decision it replaces"),
-      amends: z.string().optional().describe("Recording: the id of the decision it changes"),
-      date: z.string().optional().describe("Recording: YYYY-MM-DD (default today)"),
-      id: z.string().optional().describe("Recording: the id (default the title's slug)"),
+      text: z.string().optional().describe("The decision in full (markdown)"),
+      title: z.string().optional().describe("The title; its slug is the id"),
+      by: z.string().optional().describe("Who decided"),
+      question: z.union([z.string(), z.number()]).optional().describe("The question issue it answers (12 or #12)"),
+      summary: z.string().optional().describe("One line for the index (default the title)"),
+      scope: z.array(z.string()).optional().describe("The areas it applies to"),
+      supersedes: z.string().optional().describe("The id of the decision it replaces"),
+      amends: z.string().optional().describe("The id of the decision it changes"),
+      date: z.string().optional().describe("YYYY-MM-DD (default today)"),
+      id: z.string().optional().describe("The id (default the title's slug)"),
+      ref: ref.optional().describe("Deprecated: decide with ref (and question text) is ask; use ask"),
     },
     mutates: true,
     run: async (ctx, a) => {
-      if (a.title === undefined) {
-        if (a.ref === undefined) throw new Error("decide: give ref (asking) or text, title and by (recording)");
+      if (a.title === undefined && a.ref !== undefined) {
         const b = ctx.backlog();
-        return outcomeResult(b, await b.decide(a.ref, a.question?.toString()));
+        const result = outcomeResult(b, await b.ask(a.ref, a.question?.toString()));
+        return { ...result, warning: DECIDE_DEPRECATED };
       }
-      if (!a.text || !a.by) throw new Error("decide: recording a decision needs text, title and by");
+      if (!a.text || !a.title || !a.by) throw new Error("decide: recording a decision needs text, title and by");
       const recorded = recordDecision(ctx.root, {
         ...a,
         text: a.text,
