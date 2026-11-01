@@ -77,7 +77,7 @@ describe("adapters", () => {
         "# Backlog",
         "## P1",
         "- ~~old-thing~~ done (2026-10-23): it shipped.",
-        "- **rocks** · A long note can hide the toolbar (point 3): include the notes. Helper:",
+        "- **long-notes** · A long note can hide the toolbar (point 3): include the notes. Helper:",
         "  backend.",
         "- **lab** · In progress (branch x-lab). The toolbar prototype. Helper: frontend.",
         "## P2",
@@ -87,7 +87,7 @@ describe("adapters", () => {
     const records = readLineList(CONFIG, path.join(dir, "backlog.md"));
     expect(records.map(r => [r.id, r.status, r.priority, r.role, r.title])).toEqual([
       ["old-thing", "done", "P1", undefined, "it shipped"],
-      ["rocks", "open", "P1", "backend", "A long note can hide the toolbar (point 3)"],
+      ["long-notes", "open", "P1", "backend", "A long note can hide the toolbar (point 3)"],
       ["lab", "in-progress", "P1", "frontend", "The toolbar prototype"],
       ["later", "open", "P2", "user", "Something later"],
     ]);

@@ -46,8 +46,8 @@ describe("pull requests", () => {
 
   test("a branch named after a marker id", async () => {
     const { backlog } = setup();
-    await backlog.create({ title: "A", id: "walk-rocks" });
-    expect(await onPullRequest(backlog, pr("opened", "", "feat/walk-rocks"))).toEqual(["#1 in-progress (#99)"]);
+    await backlog.create({ title: "A", id: "export-csv" });
+    expect(await onPullRequest(backlog, pr("opened", "", "feat/export-csv"))).toEqual(["#1 in-progress (#99)"]);
   });
 
   test("closed without merge changes nothing", async () => {
