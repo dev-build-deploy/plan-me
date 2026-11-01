@@ -252,6 +252,13 @@ function skipLead(text: string): string {
   return skipMeta(text.trim()).trim().replace(SEPARATOR, "").trim();
 }
 
+/** An item's own priority: a leading priority option (`P3 · text`, `P3 (meta): text`), and the text after it. */
+function leadingPriority(text: string, priorities: string[]): { priority?: string; rest: string } {
+  const m = /^([\w-]+)(?=[\s(·:.–—-]|$)/.exec(text);
+  if (!m || !priorities.includes(m[1])) return { rest: text };
+  return { priority: m[1], rest: skipLead(text.slice(m[0].length)) };
+}
+
 /** A line-list item as read, before its dependencies are known. */
 interface LineItem {
   id: string;
@@ -260,10 +267,20 @@ interface LineItem {
   priority?: string;
 }
 
-/** The record for a line-list item; `known` are the ids defined in the same file. */
-function lineRecord(item: LineItem, known: Set<string>, file: string, options: ImportOptions): ImportRecord {
+/**
+ * The record for a line-list item; `known` are the ids defined in the same file, `priorities` the configured
+ * priority options (a leading one overrides the section's priority).
+ */
+function lineRecord(
+  item: LineItem,
+  known: Set<string>,
+  priorities: string[],
+  file: string,
+  options: ImportOptions
+): ImportRecord {
   const body = item.text.join(" ").replace(/\s+/g, " ").trim().replace(SEPARATOR, "");
-  const text = skipLead(body.replace(JOINED_IDS, "").replace(/^done\b/i, ""));
+  const own = leadingPriority(skipLead(body.replace(JOINED_IDS, "").replace(/^done\b/i, "")), priorities);
+  const text = own.rest;
   const { status, rest } = leadingStatus(text);
   const after = afterClause(rest, known);
   const phrases = [...text.matchAll(DEPENDENCY_PHRASE)].flatMap(m => splitNames(m[1]));
@@ -273,7 +290,7 @@ function lineRecord(item: LineItem, known: Set<string>, file: string, options: I
     title: shortTitle(after.rest || item.id),
     body,
     status: item.done ? "done" : (status ?? "open"),
-    priority: item.priority,
+    priority: own.priority ?? item.priority,
     component: options.component,
     role: /Helper: ([\w-]+)\.?\s*$/.exec(text)?.[1],
     dependsOn: deps.dependsOn,
@@ -284,7 +301,8 @@ function lineRecord(item: LineItem, known: Set<string>, file: string, options: I
 }
 
 /**
- * Adapter (b): a markdown line list. `## P1` headings set the priority; a `## Done` heading marks the items under it
+ * Adapter (b): a markdown line list. `## P1` headings set the priority (a leading `P3 ·` in an item's text overrides
+ * it, left out of the title); a `## Done` heading marks the items under it
  * done (until the next priority heading); `- **id** · text. Helper: role.` starts an item (indented lines continue
  * it). After the id may come joined ids (`+ **other-id**`, the first id is the item), a balanced `(meta)` group
  * (kept in the body, not the title) and a `·`, `-` or `:` separator. `- ~~id~~ done ...` is a done item. A leading
@@ -323,7 +341,7 @@ export function readLineList(config: Config, file: string, options: ImportOption
     }
   }
   const known = new Set(items.map(i => i.id));
-  return items.map(item => lineRecord(item, known, file, options));
+  return items.map(item => lineRecord(item, known, priorities, file, options));
 }
 
 /**
