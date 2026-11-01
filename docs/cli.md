@@ -104,7 +104,9 @@ depends_on: [other-id]  # blocked by
 ```
 
 **(b) A line list** (`import backlog.md`): `## P1` headings set the priority; `- **id** · text. Helper: role.` starts
-an item (indented lines continue it), its title is the first sentence; text starting "In progress" is in-progress;
+an item (indented lines continue it), its title is the first sentence. After the id may come joined ids
+(`**id** + **other-id**`: the first id is the item), a `(meta)` group (dates, branches; brackets may nest; it stays
+in the body, not the title) and a `·`, `-` or `:` separator. Text starting "In progress" is in-progress;
 `- ~~id~~ done ...` lines are done items, and so is every item under a `## Done` heading (up to the next `## P*`).
 
 Done items are skipped by default; `--done closed` imports them as closed issues.
