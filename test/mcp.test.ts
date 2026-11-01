@@ -3,6 +3,9 @@
  * SPDX-License-Identifier: MIT
  */
 
+import fs from "fs";
+import path from "path";
+
 // eslint-disable-next-line import/no-unresolved -- resolved through the package exports map
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 // eslint-disable-next-line import/no-unresolved -- resolved through the package exports map
@@ -11,6 +14,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createMcpServer } from "../src/mcp";
 
 import { setup } from "./fake";
+import { repo } from "./repo";
 
 describe("MCP server", () => {
   test("exposes the commands as tools and runs them", async () => {
@@ -22,7 +26,20 @@ describe("MCP server", () => {
 
     const { tools } = await client.listTools();
     expect(tools.map(t => t.name).sort()).toEqual(
-      ["block", "decide", "done", "list", "new", "next", "show", "snapshot", "start"].sort()
+      [
+        "block",
+        "decide",
+        "decisions_check",
+        "decisions_import",
+        "decisions_index",
+        "done",
+        "list",
+        "new",
+        "next",
+        "show",
+        "snapshot",
+        "start",
+      ].sort()
     );
     const next = tools.find(t => t.name === "next");
     expect(next?.inputSchema.properties).toHaveProperty("component");
@@ -36,6 +53,26 @@ describe("MCP server", () => {
     expect(JSON.parse((json.content as { text: string }[])[0].text)[0]).toMatchObject({ number: 1, priority: "P1" });
     const bad = await client.callTool({ name: "show", arguments: { ref: "nope" } });
     expect(bad.isError).toBe(true);
+    expect(tools.find(t => t.name === "decisions_check")?.annotations?.readOnlyHint).toBe(true);
+    await client.close();
+  });
+
+  test("the decision tools work on the root's files; a failed check is a tool error", async () => {
+    const { backlog } = setup();
+    const root = repo();
+    const server = createMcpServer(() => backlog, root);
+    const client = new Client({ name: "test", version: "1" });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(a), client.connect(b)]);
+    const args = { text: "Files.", title: "Decisions as files", by: "the owner", date: "2026-11-01" };
+    const decided = await client.callTool({ name: "decide", arguments: args });
+    expect((decided.content as { text: string }[])[0].text).toContain("wrote docs/decisions.md");
+    const ok = await client.callTool({ name: "decisions_check", arguments: {} });
+    expect(ok.isError).toBeFalsy();
+    fs.writeFileSync(path.join(root, "docs/decisions.md"), "edited by hand\n");
+    const bad = await client.callTool({ name: "decisions_check", arguments: {} });
+    expect(bad.isError).toBe(true);
+    expect((bad.content as { text: string }[])[0].text).toMatch(/^docs\/decisions\.md: stale or edited by hand/);
     await client.close();
   });
 });
