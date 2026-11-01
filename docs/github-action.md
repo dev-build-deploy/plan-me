@@ -58,17 +58,56 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.PLAN_ME_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PLAN_ME_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
       - uses: dev-build-deploy/plan-me@v0
         with:
-          token: ${{ secrets.PLAN_ME_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           config: .plan-me.json
 ```
+
+## The token: a GitHub App
+
+The workflow's `GITHUB_TOKEN` cannot write an organization's Projects v2 boards, so the Action needs its own token.
+The recommended one is a GitHub App owned by the organization: it is not tied to a person, does not expire, and one
+App serves every repository that uses plan-me. Each run turns the App's key into a short-lived token (the usage above).
+
+Once per organization:
+
+1. **Create the App**: the organization's Settings → Developer settings → GitHub Apps → New GitHub App
+   (`https://github.com/organizations/<org>/settings/apps/new`).
+   - Name: any free name, e.g. `<org>-plan-me` (App names are global).
+   - Webhook: untick **Active** (the Action calls the API; the App needs no events).
+   - Repository permissions: **Issues** read and write, **Pull requests** read-only (Metadata read-only is automatic).
+   - Organization permissions: **Projects** read and write.
+   - Installable only on this account.
+2. **Note the Client ID** (it starts with `Iv`; not the numeric App ID: `create-github-app-token` deprecated `app-id`)
+   and **generate a private key** (a `.pem` file downloads).
+3. **Install the App** on the organization, for the repositories that use plan-me.
+
+Once per repository (or once as organization variables and secrets shared with those repositories):
+
+```sh
+gh variable set PLAN_ME_APP_CLIENT_ID -R <org>/<repo> --body "<Client ID>"
+gh secret set PLAN_ME_APP_PRIVATE_KEY -R <org>/<repo> < <the key>.pem
+```
+
+Then delete the downloaded key. The Client ID is not secret: `gh api /apps/<app-slug> --jq .client_id` shows it.
+
+A fine-grained personal access token also works (resource owner: the organization; repository permissions Issues read
+and write, Pull requests read; organization permission Projects read and write), passed as `token:` from a secret. It
+acts as its owner and expires.
 
 ## Inputs
 
 | Input | Default | Meaning |
 | --- | --- | --- |
-| `token` | `github.token` | A token with Issues read/write **and Projects access**. The workflow's `GITHUB_TOKEN` cannot write organization Projects v2: use a GitHub App token (organization "Projects: read and write") or a PAT with the `project` scope. |
+| `token` | `github.token` | A token with Issues read/write **and Projects access**. The workflow's `GITHUB_TOKEN` cannot write organization Projects v2: use a GitHub App token ([the token](#the-token-a-github-app)) or a fine-grained personal access token. |
 | `config` | `.plan-me.json` | The configuration file ([config.md](./config.md)); `repository` defaults to the workflow's repository. |
 
 ## Outputs
