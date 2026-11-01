@@ -12,6 +12,7 @@ import { getOctokit } from "@actions/github";
 import { Command } from "commander";
 
 import { Backlog } from "../backlog";
+import { checkClaudeSettings, findRoot, installClaudeSettings } from "../claude";
 import { CommandName, COMMANDS } from "../commands";
 import { CONFIG_FILE, loadConfig } from "../config";
 import { DEFAULT_DRIVER_COMMAND, installMergeDriver, runMergeDriver } from "../decisions-merge";
@@ -99,7 +100,10 @@ program
   .option("--dry-run", "Only print what would be created")
   .action(async (opts: { dryRun?: boolean }, cmd: Command) => {
     const g = cmd.optsWithGlobals<Globals>();
-    const actions = await backlogFor(g).init(!!opts.dryRun);
+    const actions = [
+      ...installClaudeSettings(process.cwd(), !!opts.dryRun),
+      ...(await backlogFor(g).init(!!opts.dryRun)),
+    ];
     print(g, actions.length > 0 ? actions.join("\n") : "up to date", { actions, dryRun: !!opts.dryRun });
   });
 
@@ -254,11 +258,37 @@ program
     print(g, lines.length > 0 ? lines.join("\n") : "nothing to import", { records: records.length, actions: lines });
   });
 
+const claude = program
+  .command("claude")
+  .description("The plan-me Claude Code plugin, which every repository using plan-me enables");
+
+claude
+  .command("install")
+  .description("Enable the plugin in .claude/settings.json (merged, idempotent; `init` does this too)")
+  .option("--dry-run", "Only print what would change")
+  .action(async (opts: { dryRun?: boolean }, cmd: Command) => {
+    const g = cmd.optsWithGlobals<Globals>();
+    const actions = installClaudeSettings(process.cwd(), !!opts.dryRun);
+    print(g, actions.length > 0 ? actions.join("\n") : "up to date", { actions, dryRun: !!opts.dryRun });
+  });
+
+claude
+  .command("check")
+  .description("Fail when this plan-me repository's .claude/settings.json does not enable the plugin")
+  .action(async (_opts: unknown, cmd: Command) => {
+    const g = cmd.optsWithGlobals<Globals>();
+    const problems = checkClaudeSettings(process.cwd(), g.config);
+    print(g, problems.length > 0 ? problems.join("\n") : "ok", { problems });
+    if (problems.length > 0) process.exitCode = 1;
+  });
+
 program
   .command("mcp")
   .description("Run as an MCP server on stdio (the same commands as tools)")
   .action(async (_opts: unknown, cmd: Command) => {
     const g = cmd.optsWithGlobals<Globals>();
+    // Started by an MCP client in a subfolder (the Claude Code plugin): work from the folder holding the config.
+    process.chdir(findRoot(process.cwd(), g.config));
     await runMcpServer(() => backlogFor(g));
   });
 

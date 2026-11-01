@@ -8,6 +8,7 @@ import * as github from "@actions/github";
 
 import { onIssueClosed, onPullRequest, sweep } from "../automation";
 import { Backlog } from "../backlog";
+import { checkClaudeSettings } from "../claude";
 import { loadConfig } from "../config";
 import { checkDecisions } from "../decisions";
 import { GitHubApi, OctokitLike } from "../github";
@@ -50,10 +51,24 @@ function checkDecisionFiles(): boolean {
 }
 
 /**
+ * The plan-me Claude Code plugin is a must: a repository with the configuration file enables it in
+ * `.claude/settings.json`. One error annotation per problem.
+ * @returns Whether the settings are complete
+ */
+function checkClaudePlugin(): boolean {
+  const root = process.env.GITHUB_WORKSPACE ?? process.cwd();
+  const problems = checkClaudeSettings(root, core.getInput("config") || undefined);
+  problems.forEach(p => core.error(p));
+  core.info(problems.length > 0 ? "plan-me: the Claude Code plugin is not enabled" : "plan-me: Claude Code plugin ok");
+  return problems.length === 0;
+}
+
+/**
  * Main entry point for the GitHub Action.
  */
 async function run(): Promise<void> {
   const decisionsClean = checkDecisionFiles();
+  const pluginClean = checkClaudePlugin();
   try {
     const config = loadConfig(core.getInput("config") || undefined, process.env.GITHUB_REPOSITORY);
     const warning = versionWarning(config.version);
@@ -65,6 +80,7 @@ async function run(): Promise<void> {
     if (lines.length === 0) core.info("plan-me: nothing to change");
     core.setOutput("changes", JSON.stringify(lines));
     if (!decisionsClean) core.setFailed("plan-me: the decisions check failed (run `plan-me decisions check`)");
+    if (!pluginClean) core.setFailed("plan-me: the Claude Code plugin is not enabled (run `plan-me claude install`)");
   } catch (e) {
     core.setFailed((e as Error).message);
   }

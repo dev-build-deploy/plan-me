@@ -36,8 +36,8 @@ plan-me does not satisfy it, with the install command for the wanted release.
 | `--json` | JSON instead of compact text, for every command |
 | `-V, --version` | Prints the version (with `--json` as `{"version": ...}`) |
 
-The decision commands (`decide`, `decisions ...`) work on the files under the current directory and need no
-configuration or token, except `decide --question`.
+The decision commands (`decide`, `decisions ...`) and `claude ...` work on the files under the current directory and
+need no configuration or token, except `decide --question`.
 
 An item reference (`<ref>`) is `12`, `#12`, or the id from an item's hidden marker (`<!-- plan-me:id=walk-rocks -->`,
 set by `new --id` and `import`).
@@ -46,7 +46,7 @@ set by `new --id` and `import`).
 
 | Command | What it does |
 | --- | --- |
-| `init [--dry-run]` | Creates the missing boards (one per component, linked to the repository), fields, options and labels. Existing options are kept. Prints one line per action, or `up to date`. |
+| `init [--dry-run]` | Creates the missing boards (one per component, linked to the repository), fields, options and labels, and enables the Claude Code plugin (`claude install`). Existing options are kept. Prints one line per action, or `up to date`. |
 | `new <title> [--body t] [--type T] [--priority P] [--component c] [--role r] [--size s] [--parent ref] [--blocked-by ref]... [--design path]... [--id id]` | Creates an item: labels, issue type, board fields, sub-issue of its epic, dependencies (status blocked while a blocker is open), design doc links in the body. With `--id` it is idempotent. |
 | `start <ref> [--branch b]` | Status in-progress; the branch as a `Branch: b` line in the body. |
 | `block <ref> --by <ref>` | A "blocked by" dependency; status blocked while the blocker is open. |
@@ -63,7 +63,9 @@ set by `new --id` and `import`).
 | `show <ref>` | One item: its line, URL and body. |
 | `snapshot [--out file]` | The open backlog, one line per item, per component, epics with their children indented. |
 | `import <path> [--format folder\|lines] [--component c] [--design-prefix p] [--done skip\|closed] [--dry-run]` | See below. |
-| `mcp` | Runs the MCP server on stdio ([mcp.md](./mcp.md)). |
+| `claude install [--dry-run]` | Enables the plan-me Claude Code plugin in `.claude/settings.json`: `enabledPlugins["plan-me@dev-build-deploy"]` and the `dev-build-deploy` marketplace, merged into the file (everything else kept). Idempotent (`up to date`). No token needed. |
+| `claude check` | One line per problem and exit code 1 when a repository with the configuration file does not enable the plugin; `ok` otherwise. Every repository using plan-me uses the plugin: there is no opt-out. |
+| `mcp` | Runs the MCP server on stdio ([mcp.md](./mcp.md)); from a subfolder it works from the nearest folder upwards holding the configuration file. |
 
 Filters: `--component c`, `--role r`, `--status s`, `--priority P`, `--type T`, `--parent n`.
 
