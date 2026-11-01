@@ -42,8 +42,10 @@ export interface ImportOptions {
 const TITLE_MAX = 100;
 const TITLE_MIN_CLAUSE = 30;
 const FRONT_MATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
+/** A whole quoted scalar: a JSON-style double-quoted string (escapes allowed) or a single-quoted one; a comment may follow. */
+const QUOTED = /^(?:"((?:[^"\\]|\\.)*)"|'([^']*)')(?:\s+#.*)?$/;
 
-/** Parses the flat YAML front matter plan-me reads (`key: value`, `key: [a, b]`, quoted strings). */
+/** Parses the flat YAML front matter plan-me reads (`key: value`, `key: [a, b]`, quoted strings; `#` inside quotes is text). */
 export function parseFrontMatter(text: string): { data: Record<string, string | string[]>; content: string } {
   const m = FRONT_MATTER.exec(text);
   if (!m) return { data: {}, content: text };
@@ -51,6 +53,11 @@ export function parseFrontMatter(text: string): { data: Record<string, string | 
   for (const line of m[1].split(/\r?\n/)) {
     const kv = /^([\w-]+):\s*(.*?)\s*$/.exec(line);
     if (!kv) continue;
+    const quoted = QUOTED.exec(kv[2]);
+    if (quoted) {
+      data[kv[1]] = quoted[1] !== undefined ? JSON.parse(`"${quoted[1]}"`) : quoted[2];
+      continue;
+    }
     const value = kv[2].replace(/\s+#.*$/, "");
     if (/^\[.*\]$/.test(value)) {
       data[kv[1]] = value
