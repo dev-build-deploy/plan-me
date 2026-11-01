@@ -40,7 +40,7 @@ The decision commands (`decide`, `decisions ...`) and `claude ...` work on the f
 need no configuration or token, except `decide --question`. `templates` and `templates check` need the configuration; a
 token only to look up the organization's issue types (below).
 
-An item reference (`<ref>`) is `12`, `#12`, or the id from an item's hidden marker (`<!-- plan-me:id=walk-rocks -->`,
+An item reference (`<ref>`) is `12`, `#12`, or the id from an item's hidden marker (`<!-- plan-me:id=export-csv -->`,
 set by `new --id` and `import`).
 
 ## Commands
@@ -209,9 +209,9 @@ keeps its text. `--update --dry-run` prints `update #12 export-md: title, body, 
 **(a) A folder of item files** (`import docs/backlog`): each `.md` file with front matter
 
 ```yaml
-id: walk-rocks          # the marker id (files without one are skipped)
+id: export-csv          # the marker id (files without one are skipped)
 type: feature           # epic, feature, bug, design, decision -> that type; others (chore, art) -> Task
-parent: epic-walk       # the epic's id -> sub-issue
+parent: epic-export       # the epic's id -> sub-issue
 title: "..."
 status: open            # open | in-progress | needs-decision | blocked | done
 priority: P1
