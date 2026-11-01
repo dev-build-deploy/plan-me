@@ -5,6 +5,7 @@
 
 import { FieldSpec, PlanApi, RawIssue } from "./api";
 import { componentLabel, Config, LabelConfig, SelectField, Status, STATUSES, typeLabel } from "./config";
+import { slugify } from "./decisions";
 import { appendLine } from "./github";
 import { compareItems, componentOf, formatSnapshot, isEpic, Item, marker, MARKER, toItem, toItems } from "./item";
 
@@ -293,7 +294,23 @@ export class Backlog {
     return { item: await this.item(after), changed: true, actions: [`parent #${epic.number}`] };
   }
 
-  /** `decide`: status needs-decision; the question (if given) as a comment when the status changes. */
+  /**
+   * `ask`: opens a question. `target` is an issue (`12`, `#12`, a marker id): it becomes needs-decision, with the
+   * question as a comment when the status changes. Anything else is a new question's title: an issue (type Decision
+   * when configured; id `ask-<slug>`, so asking again returns it) with the question as its body, needs-decision.
+   */
+  async ask(target: string | number, question?: string): Promise<Outcome> {
+    const number = await this.resolve(target).catch(() => undefined);
+    if (number !== undefined) return this.decide(number, question);
+    const title = String(target).trim();
+    const type = this.config.types.find(t => t.toLowerCase() === "decision");
+    const created = await this.create({ title, body: question, type, id: `ask-${slugify(title)}` });
+    const outcome = await this.setStatus(created.item.number, "needs-decision");
+    const actions = [...created.actions, ...outcome.actions];
+    return { item: outcome.item, changed: actions.length > 0, actions };
+  }
+
+  /** Status needs-decision; the question (if given) as a comment when the status changes (`ask` on an issue). */
   async decide(ref: string | number, question?: string): Promise<Outcome> {
     const outcome = await this.setStatus(ref, "needs-decision");
     if (outcome.changed && question) {

@@ -14,6 +14,7 @@ import { Command } from "commander";
 import { Backlog } from "../backlog";
 import { CommandName, COMMANDS } from "../commands";
 import { CONFIG_FILE, loadConfig } from "../config";
+import { DEFAULT_DRIVER_COMMAND, installMergeDriver, runMergeDriver } from "../decisions-merge";
 import { GitHubApi, OctokitLike } from "../github";
 import { readItemFolder, readLineList, runImport } from "../importer";
 import { runMcpServer } from "../mcp";
@@ -47,6 +48,7 @@ async function run(cmd: Command, name: CommandName, args: Record<string, unknown
   const g = cmd.optsWithGlobals<Globals>();
   const spec = COMMANDS[name];
   const result = await spec.run({ backlog: () => backlogFor(g), root: process.cwd() }, args as never);
+  if (result.warning) process.stderr.write(`${result.warning}\n`);
   print(g, result.text, result.json);
   if (result.failed) process.exitCode = 1;
 }
@@ -116,22 +118,30 @@ program
   .action(async (ref: string, opts: { by: string }, cmd: Command) => run(cmd, "block", { ref, by: opts.by }));
 
 program
-  .command("decide <ref-or-text>")
+  .command("ask <ref-or-title> [question]")
   .description(
-    "Ask: `decide <ref> [--question text]` marks an item needs-decision. Record: `decide <text> --title t --by b` " +
-      "writes docs/decisions/<date>-<id>.md and regenerates docs/decisions.md"
+    "Open a question: an issue (12, #12, an id) becomes needs-decision with the question as a comment; " +
+      "any other text is a new question's title (a new issue, needs-decision)"
   )
-  .option("--question <text-or-ref>", "Asking: the question (a comment). Recording: the question issue it answers")
-  .option("--title <t>", "Recording: the decision's title (its slug is the id); switches decide to recording")
-  .option("--by <who>", "Recording: who decided")
-  .option("--summary <line>", "Recording: one line for the index (default the title)")
-  .option("--scope <area>", "Recording: an area it applies to (repeatable)", collect)
-  .option("--supersedes <id>", "Recording: the decision it replaces (becomes superseded)")
-  .option("--amends <id>", "Recording: the decision it changes (becomes amended)")
-  .option("--date <yyyy-mm-dd>", "Recording: the date (default today)")
-  .option("--id <id>", "Recording: the id (default the title's slug)")
+  .action(async (target: string, question: string | undefined, _opts: unknown, cmd: Command) =>
+    run(cmd, "ask", { ref: target, question })
+  );
+
+program
+  .command("decide <text>")
+  .description("Record a decision: writes docs/decisions/<date>-<id>.md and regenerates docs/decisions.md")
+  .option("--title <t>", "The decision's title (its slug is the id)")
+  .option("--by <who>", "Who decided")
+  .option("--question <ref>", "The question issue it answers (12 or #12)")
+  .option("--summary <line>", "One line for the index (default the title)")
+  .option("--scope <area>", "An area it applies to (repeatable)", collect)
+  .option("--supersedes <id>", "The decision it replaces (becomes superseded)")
+  .option("--amends <id>", "The decision it changes (becomes amended)")
+  .option("--date <yyyy-mm-dd>", "The date (default today)")
+  .option("--id <id>", "The id (default the title's slug)")
   .action(async (first: string, opts: Record<string, unknown>, cmd: Command) =>
-    run(cmd, "decide", opts.title === undefined ? { ref: first, ...opts } : { text: first, ...opts })
+    // Without --title this is the deprecated `decide <ref> [--question "<text>"]`, which is `ask`.
+    run(cmd, "decide", opts.title === undefined ? { ref: first, question: opts.question } : { text: first, ...opts })
   );
 
 const decisions = program.command("decisions").description("The decision files (docs/decisions/) and their index");
@@ -175,6 +185,23 @@ program
   .command("show <ref>")
   .description("One item with its body")
   .action(async (ref: string, _opts: unknown, cmd: Command) => run(cmd, "show", { ref }));
+
+decisions
+  .command("install")
+  .description("Set up the merge driver that regenerates docs/decisions.md on merges (once per clone)")
+  .option("--command <cmd>", "How git starts plan-me", DEFAULT_DRIVER_COMMAND)
+  .action(async (opts: { command: string }, cmd: Command) => {
+    const g = cmd.optsWithGlobals<Globals>();
+    const actions = installMergeDriver(process.cwd(), opts.command);
+    print(g, actions.length > 0 ? actions.join("\n") : "merge driver installed", { actions });
+  });
+
+decisions
+  .command("merge-driver <base> <ours> <theirs>")
+  .description("Git's merge driver for docs/decisions.md (git runs it: %O %A %B); see `decisions install`")
+  .action(async (base: string, ours: string, theirs: string) => {
+    if (!runMergeDriver(base, ours, theirs)) process.exitCode = 1;
+  });
 
 program
   .command("snapshot")
