@@ -48334,6 +48334,7 @@ function wrappy (fn, cb) {
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.Backlog = void 0;
+exports.askBody = askBody;
 const config_1 = __nccwpck_require__(22973);
 const decisions_1 = __nccwpck_require__(19816);
 const github_1 = __nccwpck_require__(69248);
@@ -48582,7 +48583,8 @@ class Backlog {
     /**
      * `ask`: opens a question. `target` is an issue (`12`, `#12`, a marker id): it becomes needs-decision, with the
      * question as a comment when the status changes. Anything else is a new question's title: an issue (type Decision
-     * when configured; id `ask-<slug>`, so asking again returns it) with the question as its body, needs-decision.
+     * when configured; id `ask-<slug>`, so asking again returns it), needs-decision, whose body is the Decision type's
+     * sections with the question under What and the other sections left to fill in (the issue check then says which).
      */
     async ask(target, question) {
         const number = await this.resolve(target).catch(() => undefined);
@@ -48590,7 +48592,7 @@ class Backlog {
             return this.decide(number, question);
         const title = String(target).trim();
         const type = this.config.types.find(t => t.toLowerCase() === "decision");
-        const created = await this.create({ title, body: question, type, id: `ask-${(0, decisions_1.slugify)(title)}` });
+        const created = await this.create({ title, body: askBody(type, question), type, id: `ask-${(0, decisions_1.slugify)(title)}` });
         const outcome = await this.setStatus(created.item.number, "needs-decision");
         const actions = [...created.actions, ...outcome.actions];
         return { item: outcome.item, changed: actions.length > 0, actions };
@@ -48669,6 +48671,15 @@ class Backlog {
     }
 }
 exports.Backlog = Backlog;
+/** A new question's body: the Decision sections, the question under What (the question alone without a Decision type). */
+function askBody(type, question) {
+    if (!type)
+        return question;
+    const skeleton = (0, issue_check_1.skeletonFor)(type);
+    if (!question?.trim())
+        return skeleton;
+    return skeleton.replace(/(### What\n\n)(<!--[^\n]*-->)?/, `$1${question.trim()}`);
+}
 
 
 /***/ }),
@@ -50989,7 +51000,8 @@ function readItemFolder(config, dir, options = {}) {
         const type = mapType(config, asString(data.type));
         const body = [
             sectionHeadings(content.replace(/^\s*#\s+.*\r?\n/, "").trim(), type),
-            decisions ? `Decisions: ${decisions}` : "",
+            // Said in words, so the issue check's bare-reference rule (a reference with nothing saying what it is) passes.
+            decisions ? `Decisions this item carries (numbered, in the decisions index): ${decisions}` : "",
             asString(data.owner) ? `Owner: ${asString(data.owner)}` : "",
         ]
             .filter(Boolean)

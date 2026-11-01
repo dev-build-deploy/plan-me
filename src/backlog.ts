@@ -7,7 +7,7 @@ import { FieldSpec, PlanApi, RawIssue } from "./api";
 import { componentLabel, Config, LabelConfig, SelectField, Status, STATUSES, typeLabel } from "./config";
 import { slugify } from "./decisions";
 import { appendLine } from "./github";
-import { parseSections } from "./issue-check";
+import { parseSections, skeletonFor } from "./issue-check";
 import { compareItems, componentOf, formatSnapshot, isEpic, Item, marker, MARKER, toItem, toItems } from "./item";
 import { DESIGN_DOCS_HEADING, sectionsFor } from "./templates";
 
@@ -305,14 +305,15 @@ export class Backlog {
   /**
    * `ask`: opens a question. `target` is an issue (`12`, `#12`, a marker id): it becomes needs-decision, with the
    * question as a comment when the status changes. Anything else is a new question's title: an issue (type Decision
-   * when configured; id `ask-<slug>`, so asking again returns it) with the question as its body, needs-decision.
+   * when configured; id `ask-<slug>`, so asking again returns it), needs-decision, whose body is the Decision type's
+   * sections with the question under What and the other sections left to fill in (the issue check then says which).
    */
   async ask(target: string | number, question?: string): Promise<Outcome> {
     const number = await this.resolve(target).catch(() => undefined);
     if (number !== undefined) return this.decide(number, question);
     const title = String(target).trim();
     const type = this.config.types.find(t => t.toLowerCase() === "decision");
-    const created = await this.create({ title, body: question, type, id: `ask-${slugify(title)}` });
+    const created = await this.create({ title, body: askBody(type, question), type, id: `ask-${slugify(title)}` });
     const outcome = await this.setStatus(created.item.number, "needs-decision");
     const actions = [...created.actions, ...outcome.actions];
     return { item: outcome.item, changed: actions.length > 0, actions };
@@ -401,4 +402,12 @@ export class Backlog {
   async snapshot(): Promise<string> {
     return formatSnapshot(this.config, toItems(this.config, await this.openIssues(), false));
   }
+}
+
+/** A new question's body: the Decision sections, the question under What (the question alone without a Decision type). */
+export function askBody(type: string | undefined, question: string | undefined): string | undefined {
+  if (!type) return question;
+  const skeleton = skeletonFor(type);
+  if (!question?.trim()) return skeleton;
+  return skeleton.replace(/(### What\n\n)(<!--[^\n]*-->)?/, `$1${question.trim()}`);
 }

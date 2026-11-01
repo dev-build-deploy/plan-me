@@ -67,7 +67,7 @@ describe("adapters", () => {
       design: ["docs/design/x.md"],
     });
     expect(records[0].body).toMatch(/^### Why\n\nWhy of child\.\n\n### Context/);
-    expect(records[0].body).toMatch(/What of child\.\n\nDecisions: 16, 17$/);
+    expect(records[0].body).toMatch(/What of child\.\n\nDecisions this item carries \(numbered, in the decisions index\): 16, 17$/);
     expect(records[1]).toMatchObject({ type: "Epic", component: "engine", priority: "P1" });
   });
 
