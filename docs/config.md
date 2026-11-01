@@ -10,14 +10,14 @@ Everything except `repository` has a default; in the Action `repository` default
 
 ```json
 {
-  "repository": "dev-build-deploy/birchling",
-  "owner": "dev-build-deploy",
+  "repository": "octo-org/notes",
+  "owner": "octo-org",
   "boards": {
-    "engine": "Engine",
-    "birchling": "Birchling",
-    "leertoren": { "title": "De Leertoren", "number": 7 }
+    "api": "API",
+    "web": "Web",
+    "mobile": { "title": "Mobile app", "number": 7 }
   },
-  "defaultComponent": "birchling",
+  "defaultComponent": "web",
   "componentLabelPrefix": "component:",
   "fields": {
     "status": {
@@ -25,7 +25,7 @@ Everything except `repository` has a default; in the Action `repository` default
       "options": { "open": "Todo", "in-progress": "In Progress", "needs-decision": "Needs decision", "blocked": "Blocked", "done": "Done" }
     },
     "priority": { "name": "Priority", "options": ["P1", "P2", "P3"], "default": "P2" },
-    "role": { "name": "Role", "options": ["lead", "feature-dev", "engine-dev", "feel-polish", "user"] },
+    "role": { "name": "Role", "options": ["lead", "backend", "frontend", "design", "user"] },
     "size": { "name": "Size", "options": ["XS", "S", "M", "L", "XL"] }
   },
   "types": ["Feature", "Bug", "Task", "Design", "Decision", "Epic"],

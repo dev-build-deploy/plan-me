@@ -71,14 +71,14 @@ Three sections, in this order:
 2. **Amended**: still valid, but read the decision named after `amended by` too.
 3. **Superseded**: history only. Never follow these; follow the decision named after `superseded by`.
 
-Within a section the newest come first (then the higher number, then the id). Lines from Birchling's imported list:
+Within a section the newest come first (then the higher number, then the id). Lines from an imported numbered list:
 
 ```text
 - backlog-on-github-issues-plan-me · 128 · 2026-10-25 · current · - · Backlog on GitHub issues (plan-me), docs to the Wiki (docs-me)
-- the-sky-fight-keeps-its-show · 127 · 2026-10-16 · current · - · The sky fight keeps its show
-- lua-is-the-games-script-language · 102 · 2026-10-14 · current · - · Lua is the game's script language
-- day-and-night-lengths-in-data · 82 · 2026-10-12 · current · - · Day and night lengths in data: 3 minutes of day, 3 of night (3/2 to try)
-- longer-nights-b · 79 · 2026-10-11 · amended by day-and-night-lengths-in-data · - · Longer nights (B)
+- the-editor-keeps-its-preview · 127 · 2026-10-16 · current · - · The editor keeps its preview
+- lua-is-the-plugin-language · 102 · 2026-10-14 · current · - · Lua is the plugin language
+- trial-and-grace-lengths-in-data · 82 · 2026-10-12 · current · - · Trial and grace lengths in data: 14 days of trial, 14 of grace (14/7 to try)
+- longer-trials-b · 79 · 2026-10-11 · amended by trial-and-grace-lengths-in-data · - · Longer trials (B)
 ```
 
 Finding things: `grep " · 129 · " docs/decisions.md` finds old decision 129, `grep " · L99 · "` finds L99,

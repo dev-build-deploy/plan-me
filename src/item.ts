@@ -142,7 +142,7 @@ export function isEpic(config: Config, item: Item): boolean {
   return item.type?.toLowerCase() === config.epicType.toLowerCase();
 }
 
-/** One line for an item: `#12 [leertoren P1 in-progress feel-polish] title — blocked by #9`. */
+/** One line for an item: `#12 [web P1 in-progress frontend] title — blocked by #9`. */
 export function formatItem(config: Config, item: Item): string {
   const tags = [item.component, item.priority, item.status, item.role, isEpic(config, item) ? "epic" : undefined];
   const blocked = item.blockedBy.length > 0 ? ` — blocked by ${item.blockedBy.map(n => `#${n}`).join(", ")}` : "";
