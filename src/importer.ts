@@ -167,13 +167,15 @@ export function readItemFolder(config: Config, dir: string, options: ImportOptio
 }
 
 /**
- * Adapter (b): a markdown line list. `## P1` headings set the priority; `- **id** · text. Helper: role.` starts an
- * item (indented lines continue it); `- ~~id~~ done ...` is a done item; text starting "In progress" is in-progress.
+ * Adapter (b): a markdown line list. `## P1` headings set the priority; a `## Done` heading marks the items under it
+ * done (until the next priority heading); `- **id** · text. Helper: role.` starts an item (indented lines continue
+ * it); `- ~~id~~ done ...` is a done item; text starting "In progress" is in-progress.
  */
 export function readLineList(config: Config, file: string, options: ImportOptions = {}): ImportRecord[] {
   const records: ImportRecord[] = [];
   const priorities = Object.keys(config.fields.priority.options);
   let priority: string | undefined;
+  let doneSection = false;
   let current: { id: string; text: string[]; done: boolean; priority?: string } | undefined;
   const flush = (): void => {
     if (!current) return;
@@ -199,7 +201,12 @@ export function readLineList(config: Config, file: string, options: ImportOption
     const heading = /^##\s+(\S+)/.exec(line);
     if (heading) {
       flush();
-      priority = priorities.includes(heading[1]) ? heading[1] : priority;
+      if (priorities.includes(heading[1])) {
+        priority = heading[1];
+        doneSection = false;
+      } else if (/^done\b/i.test(heading[1])) {
+        doneSection = true;
+      }
       continue;
     }
     const open = /^- \*\*([\w.-]+)\*\*\s*·?\s*(.*)$/.exec(line);
@@ -207,7 +214,7 @@ export function readLineList(config: Config, file: string, options: ImportOption
     if (open || done) {
       flush();
       const m = (open ?? done) as RegExpExecArray;
-      current = { id: m[1], text: [m[2]], done: !!done, priority };
+      current = { id: m[1], text: [m[2]], done: !!done || doneSection, priority };
     } else if (current && /^\s+\S/.test(line)) {
       current.text.push(line.trim());
     } else if (line.trim() === "" || /^\S/.test(line)) {
