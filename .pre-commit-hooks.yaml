@@ -8,3 +8,11 @@
   language: node
   pass_filenames: false
   files: ^docs/decisions
+
+- id: plan-me-claude
+  name: PlanMe - Claude Code plugin check
+  description: Fails when a repository with .plan-me.json does not enable the plan-me Claude Code plugin in .claude/settings.json
+  entry: plan-me claude check
+  language: node
+  pass_filenames: false
+  always_run: true

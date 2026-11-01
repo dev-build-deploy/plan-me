@@ -4,6 +4,7 @@ Upstream-Contact: Kevin de Jong <monkaii@hotmail.com>
 Source: https://github.com/dev-build-deploy/plan-me
 
 Files: lib/**
+       claude-plugin/bundle/**
 Copyright: 2026 Kevin de Jong <monkaii@hotmail.com>
 License: MIT
 
@@ -21,5 +22,11 @@ Copyright: 2026 Kevin de Jong <monkaii@hotmail.com>
 License: CC0-1.0
 
 Files: test/fixtures/**
+Copyright: 2026 Kevin de Jong <monkaii@hotmail.com>
+License: MIT
+
+Files: claude-plugin/.claude-plugin/plugin.json
+       claude-plugin/hooks/hooks.json
+       claude-plugin/skills/**
 Copyright: 2026 Kevin de Jong <monkaii@hotmail.com>
 License: MIT
