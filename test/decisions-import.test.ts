@@ -46,6 +46,7 @@ describe("numbered lists (docs/decisions.md)", () => {
       title: "3D portraits: a quick fix on step 1",
     });
     expect(list.find(e => e.number === "128")).toMatchObject({ date: "2026-10-25", by: "the user" });
+    expect(list.find(e => e.number === "82")?.date).toBe("2026-10-12"); // its parentheses close on the next line
     expect(list.find(e => e.number === "43")?.by).toBeUndefined(); // "the after-Stone-Peak question" is no decider
   });
 
