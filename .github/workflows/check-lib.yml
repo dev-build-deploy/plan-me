@@ -15,3 +15,9 @@ jobs:
     uses: actions/reusable-workflows/.github/workflows/check-dist.yml@main
     with:
       dist-path: ./lib
+
+  check-plugin-bundle:
+    name: Check Claude plugin bundle
+    uses: actions/reusable-workflows/.github/workflows/check-dist.yml@main
+    with:
+      dist-path: ./claude-plugin/bundle

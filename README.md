@@ -6,8 +6,8 @@ SPDX-License-Identifier: MIT
 # PlanMe
 
 PlanMe manages a backlog on GitHub Issues and Projects v2: a [Command Line Interface](./docs/cli.md), a
-[GitHub Action](./docs/github-action.md) for the automation, and an [MCP server](./docs/mcp.md) exposing the same
-commands as tools. It is deterministic (no AI anywhere) and built to be cheap for an LLM to drive: one line per item
+[GitHub Action](./docs/github-action.md) for the automation, an [MCP server](./docs/mcp.md) exposing the same
+commands as tools, and a [Claude Code plugin](#claude-code-plugin) that every repository using plan-me enables. It is deterministic (no AI anywhere) and built to be cheap for an LLM to drive: one line per item
 by default, `--json` everywhere, idempotent commands, and a local snapshot to grep instead of many API calls.
 
 - **One board per component**: each component (e.g. `api`, `web`, `mobile`) has its own Projects v2
@@ -108,6 +108,42 @@ wrote docs/decisions.md
 ```
 
 The guide: [docs/decisions.md](./docs/decisions.md).
+
+## Claude Code plugin
+
+**Every repository that uses plan-me also uses the plan-me Claude Code plugin.** It is not optional: `plan-me init`
+enables it, and `plan-me claude check` (run by the Action on every run, and by the `plan-me-claude` pre-commit hook)
+fails a repository with a `.plan-me.json` whose `.claude/settings.json` does not.
+
+```sh
+plan-me claude install   # or `plan-me init`: merges into .claude/settings.json, keeping everything else
+```
+
+```json
+{
+  "enabledPlugins": { "plan-me@dev-build-deploy": true },
+  "extraKnownMarketplaces": {
+    "dev-build-deploy": { "source": { "source": "github", "repo": "dev-build-deploy/claude-plugins" } }
+  }
+}
+```
+
+Commit the file; Claude Code then offers to install the plugin from the
+[dev-build-deploy marketplace](https://github.com/dev-build-deploy/claude-plugins) when the repository is trusted
+(by hand: `/plugin install plan-me@dev-build-deploy`). The plugin (in [`claude-plugin/`](./claude-plugin)) brings:
+
+- **The MCP server**: plan-me's commands as tools in every session ([docs/mcp.md](./docs/mcp.md)), run from the
+  plugin's bundled CLI, so nothing else needs installing. Its token is `GITHUB_TOKEN`, `GH_TOKEN` or `gh auth token`;
+  without one the decision tools still work.
+- **Hooks**, only in a repository with `.plan-me.json`:
+  - `gh issue create`, `gh issue edit` and `gh issue close` are denied with the plan-me command to use instead
+    (`new`, `start`/`block`/`ask`, `done`): they bypass the board fields. `gh issue view`, `list` and `comment` pass.
+  - A Write or Edit of the generated `docs/decisions.md`, or of an issue form plan-me generated (a
+    `.github/ISSUE_TEMPLATE/*.yml` with a `# plan-me:sha256=` line), is denied.
+  - `git commit` with changed decision files runs `plan-me decisions check` first and is denied on its problems.
+  - The session starts with one note: `plan-me snapshot --out` to read the backlog, `plan-me next` for the next job.
+- **The skill** `working-with-plan-me`: how an agent reads the backlog, starts work, asks the user, records a
+  decision and finishes.
 
 ## Configuration
 

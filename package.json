@@ -11,7 +11,8 @@
     "action",
     "backlog",
     "projects",
-    "mcp"
+    "mcp",
+    "claude-code"
   ],
   "bugs": {
     "url": "https://github.com/dev-build-deploy/plan-me/issues"
@@ -20,9 +21,11 @@
     "build": "run-p build:*",
     "build:cli": "ncc build -o lib/cli src/entrypoints/cli.ts",
     "build:action": "ncc build -o lib/action src/entrypoints/action.ts",
+    "build:plugin": "ncc build -o claude-plugin/bundle src/entrypoints/cli.ts",
     "test": "jest --coverage",
     "lint": "eslint --ext .ts .",
     "format": "prettier --write **/*.ts && prettier --write **/**/*.ts",
+    "test:plugin": "claude plugin test claude-plugin",
     "setup-hooks": "pre-commit install --hook-type pre-commit --hook-type commit-msg"
   },
   "bin": {

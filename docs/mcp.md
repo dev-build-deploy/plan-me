@@ -35,14 +35,11 @@ directory ([decisions.md](./decisions.md)).
 The server uses the same configuration and token as the CLI (`.plan-me.json` in its working directory, or
 `--config`; `GITHUB_TOKEN`, `GH_TOKEN` or `gh auth token`).
 
-Claude Code (`.mcp.json` in the managed repository):
-
-```json
-{
-  "mcpServers": {
-    "plan-me": { "command": "plan-me", "args": ["mcp"] }
-  }
-}
-```
+**Claude Code**: the plan-me Claude Code plugin, which every repository using plan-me enables
+(`plan-me claude install`; see the [README](../README.md#claude-code-plugin)), declares this server: it runs the
+plugin's bundled CLI (`node <plugin>/bundle/index.js mcp`), so neither an `.mcp.json` nor a global install is needed.
+Started in a subfolder, the server works from the nearest folder upwards holding `.plan-me.json`. Without a token
+(`GITHUB_TOKEN`, `GH_TOKEN` or `gh auth token`) the backlog tools answer with an error and the decision tools still
+work.
 
 Any other MCP client: run `plan-me --config /path/to/.plan-me.json mcp` as a stdio server.
