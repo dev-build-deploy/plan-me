@@ -1,6 +1,6 @@
 {
   "name": "plan-me",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": false,
   "description": "Deterministic GitHub backlog management (Issues + Projects v2) for humans and LLMs",
   "author": "Kevin de Jong",

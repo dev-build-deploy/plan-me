@@ -8,7 +8,7 @@ description: Work a backlog kept with plan-me (GitHub issues + Projects v2, deci
 A repository with a `.plan-me.json` keeps its backlog on GitHub issues with Projects v2 boards (one board per
 component; fields Status, Priority, Role, Size) and its decisions as files in `docs/decisions/`. plan-me's commands
 keep the issues, the board fields and the index consistent; `gh issue create`, `gh issue edit` and `gh issue close`
-skip the board fields, so this plugin denies them here.
+skip the board fields, so this plugin denies them here. With `-R` / `--repo` naming another repository they pass.
 
 Every command below is also an MCP tool of this plugin's `plan-me` server (`next`, `list`, `show`, `snapshot`, `new`,
 `check_issue`, `start`, `block`, `ask`, `decide`, `done`, `decisions_index`, `decisions_check`, `decisions_import`), with the same
