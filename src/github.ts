@@ -115,6 +115,18 @@ export function toRawIssue(i: GqlIssue, f: Features): RawIssue {
   };
 }
 
+/**
+ * Whether an error is GitHub's rate limit (REST 403/429 or a GraphQL "API rate limit" error): the run should wait
+ * for the next one (the nightly sweep catches up), not fail.
+ */
+export function isRateLimit(e: unknown): boolean {
+  const err = e as { status?: number; message?: string } | undefined;
+  const text = String(err?.message ?? e ?? "");
+  return (
+    /\b(?:secondary |API )?rate limit\b/i.test(text) && (err?.status === undefined || [403, 429].includes(err.status))
+  );
+}
+
 /** Appends a line to a body unless an equal line is already there. */
 export function appendLine(body: string, line: string): string {
   if (body.split(/\r?\n/).some(l => l.trim() === line)) return body;

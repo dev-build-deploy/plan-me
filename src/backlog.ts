@@ -102,6 +102,8 @@ export class Backlog {
   }
 
   private async item(raw: RawIssue): Promise<Item> {
+    // (native links carry their own state: the whole backlog is read only for body-line links of unknown state)
+    if ([...raw.blockedBy, ...raw.children].every(l => l.open !== undefined)) return toItem(this.config, raw);
     const known = new Map((await this.openIssues()).map(r => [r.number, r]));
     known.set(raw.number, raw);
     return toItem(this.config, raw, known);

@@ -9,6 +9,9 @@ import { resolveConfig } from "../src/config";
 
 import { CONFIG, FakeApi, setup } from "./fake";
 
+/** A new Backlog on the same fake: the Action makes one per run, so no cache from the set-up carries over. */
+const fresh = (api: FakeApi): Backlog => new Backlog(api, CONFIG);
+
 const pr = (action: string, body: string, branch = "main", merged = false): PullRequestInfo => ({
   number: 99,
   action,
@@ -68,6 +71,49 @@ describe("issues and schedule", () => {
     expect((await backlog.show(2)).status).toBe("open");
     expect(api.comments.get(2)).toHaveLength(1);
     expect(await onIssueClosed(backlog, 1)).toEqual([]);
+  });
+
+  test("a close reads only the issues it blocked, never the whole backlog (native dependencies)", async () => {
+    const { api, backlog } = setup();
+    await backlog.create({ title: "Blocker" });
+    await backlog.create({ title: "Other blocker" });
+    await backlog.create({ title: "Free once 1 closes", blockedBy: ["1"] });
+    await backlog.create({ title: "Still blocked by 2", blockedBy: ["1", "2"] });
+    for (let k = 0; k < 20; k++) await backlog.create({ title: `Unrelated ${k}` });
+    await api.setOpen(1, false);
+    api.reads = 0;
+    expect(await onIssueClosed(fresh(api), 1)).toEqual(["#1 done", "#3 unblocked"]);
+    expect(api.reads).toBe(0);
+    expect((await backlog.show(4)).status).toBe("blocked");
+  });
+
+  test("a close already marked done by the CLI changes nothing and reads nothing more", async () => {
+    const { api, backlog } = setup();
+    await backlog.create({ title: "Idea" });
+    await backlog.done(1, "not planned");
+    api.reads = 0;
+    api.calls = [];
+    expect(await onIssueClosed(fresh(api), 1)).toEqual([]);
+    expect(api.reads).toBe(0);
+    expect(api.calls).toEqual([]);
+  });
+
+  test("body-line blockers (no native dependencies): a close still sweeps the backlog", async () => {
+    const api = new FakeApi({ subIssues: false, dependencies: false, issueTypes: [] });
+    const backlog = new Backlog(api, CONFIG);
+    await backlog.create({ title: "Blocker" });
+    await backlog.create({ title: "Dependent", blockedBy: ["1"] });
+    await api.setOpen(1, false);
+    expect(await onIssueClosed(new Backlog(api, CONFIG), 1)).toEqual(["#1 done", "#2 unblocked"]);
+  });
+
+  test("an issue event sweeps that issue alone (native dependencies)", async () => {
+    const { api } = setup();
+    api.add({ title: "Bare", labels: ["component:engine"] });
+    for (let k = 0; k < 5; k++) api.add({ title: `Bare ${k}`, labels: ["component:engine"] });
+    api.reads = 0;
+    expect(await sweep(fresh(api), [1])).toEqual(["#1 status open", "#1 priority P2"]);
+    expect(api.reads).toBe(0);
   });
 
   test("missing priority gets the default and a comment; missing status becomes open", async () => {

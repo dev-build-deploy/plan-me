@@ -11,7 +11,7 @@ import { Backlog } from "../backlog";
 import { checkClaudeSettings } from "../claude";
 import { Config, loadConfig } from "../config";
 import { checkDecisions } from "../decisions";
-import { GitHubApi, OctokitLike } from "../github";
+import { GitHubApi, isRateLimit, OctokitLike } from "../github";
 import { checkTemplates } from "../templates";
 import { versionWarning } from "../version";
 
@@ -127,7 +127,10 @@ async function run(): Promise<void> {
     if (!pluginClean) core.setFailed("plan-me: the Claude Code plugin is not enabled (run `plan-me claude install`)");
     if (!templatesClean) core.setFailed("plan-me: the issue forms are stale (run `plan-me templates`)");
   } catch (e) {
-    core.setFailed((e as Error).message);
+    // (a burst of issue events can spend the token's hourly API budget: this run skips, the next or the nightly
+    // sweep catches up; a failed run here would only mail the maintainers once per event)
+    if (isRateLimit(e)) core.warning(`plan-me: skipped, GitHub's API rate limit is reached (${(e as Error).message})`);
+    else core.setFailed((e as Error).message);
   }
 }
 

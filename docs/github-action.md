@@ -12,7 +12,7 @@ idempotent: rerunning an event changes nothing.
 | --- | --- |
 | `pull_request` opened, edited, synchronize, reopened, ready_for_review | The issues it references move to in-progress: `Closes #n` (fixes, resolves), `Part of #n`, or the number in the branch name (`feat/12-x`; or a branch whose last segment is an item's marker id). |
 | `pull_request` closed and merged | `Closes` and branch issues: a Done comment ("Merged in #PR."), closed, status done. `Part of` issues stay in-progress. |
-| `issues` closed | Status done; dependents whose blockers are now all closed go from blocked back to open, with a comment. |
+| `issues` closed | Status done; dependents whose blockers are now all closed go from blocked back to open, with a comment. Only the issues the closed one blocked are read, so a burst of closes stays cheap (with GitHub's native dependencies; body-line blockers need the whole backlog). |
 | `issues` opened | An issue from one of plan-me's forms: its Component answer becomes the component label (unless it has one), its Priority, Role and Size answers the board fields; a Decision becomes needs-decision. Then it is kept consistent (below). |
 | `issues` opened, edited | The [issue check](./cli.md#the-issue-check) on its title, type and body (below). |
 | `issues` edited, labeled, reopened | That issue is kept consistent (below). |
@@ -59,6 +59,11 @@ on the runner; the glossary is read from the checkout. `issue-check: false` turn
 Consistency: an issue without a Priority gets the configured default and a comment; an issue without a Status gets
 open; a blocked issue whose blockers are all closed goes back to open (with a comment). Issues whose component has no
 board are left alone.
+
+API budget: an issue event reads only the issues it touches (with native dependencies), and the whole backlog is
+read only on `schedule` and `workflow_dispatch`, or when blockers are body lines. All runs share the token's hourly
+GitHub API budget (5,000 requests for a GitHub App installation). When a run still hits GitHub's rate limit, it ends
+with a warning instead of failing: the next event, or the nightly sweep, catches up.
 
 ## Usage
 
