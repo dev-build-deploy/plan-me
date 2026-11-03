@@ -147,6 +147,7 @@ Commit the file; Claude Code then offers to install the plugin from the
 - **Hooks**, only in a repository with `.plan-me.json`:
   - `gh issue create`, `gh issue edit` and `gh issue close` are denied with the plan-me command to use instead
     (`new`, `start`/`block`/`ask`, `done`): they bypass the board fields. `gh issue view`, `list` and `comment` pass.
+    One aimed at another repository (`-R` / `--repo` naming a repository other than `.plan-me.json`'s) passes.
     With a body, the denial also lists what the issue check finds in it.
   - `plan-me new` and the MCP tool `new` run the bundled `plan-me check-issue` on the body first: errors deny always,
     warnings deny once per body (the same body sent again goes through), as pull-me's plugin does for pull requests.
