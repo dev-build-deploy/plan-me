@@ -40,6 +40,28 @@ export function ghIssue(command: string): "create" | "edit" | "close" | undefine
   return m[1] === "new" ? "create" : (m[1] as "create" | "edit" | "close");
 }
 
+/**
+ * The repository a `gh issue` command names with `-R` / `--repo` (before or after `issue <subcommand>`), as a
+ * lower-case `owner/name`, or undefined when it names none. Quoted text other than the flag's value (a title, a
+ * body) is ignored, so a body that mentions `-R x/y` does not count.
+ */
+export function ghIssueRepo(command: string): string | undefined {
+  const m = GH_ISSUE.exec(command);
+  if (!m) return undefined;
+  const segment = command
+    .slice(m.index)
+    .replace(/^[;&|(\n]/, "")
+    .split(/[;&|\n]/)[0]
+    .replace(/(\s(?:-R|--repo)(?:\s+|=))(["'])([^"']*)\2/g, "$1$3")
+    .replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, "''");
+  const repo = /\s(?:-R|--repo)(?:\s+|=)(\S+)/.exec(segment)?.[1];
+  if (!repo) return undefined;
+  return repo
+    .replace(/^(?:https?:\/\/)?(?:www\.)?github\.com\//i, "")
+    .replace(/(?:\.git)?\/*$/, "")
+    .toLowerCase();
+}
+
 /** Whether a Bash command runs `git commit`, and whether it stages files itself. */
 export function gitCommit(command: string): { commit: boolean; stages: boolean } {
   return { commit: GIT_COMMIT.test(command), stages: STAGES.test(command) };
@@ -283,6 +305,16 @@ async function findRoot($: EngineInterface, cwd: string): Promise<string | null>
   }
 }
 
+/** The `repository` of a plan-me root's `.plan-me.json`, lower-case, or undefined when it has none or is unreadable. */
+async function configRepo($: EngineInterface, root: string): Promise<string | undefined> {
+  try {
+    const raw = JSON.parse(`${await $.fs.read(`${root}/${CONFIG}`)}`) as { repository?: unknown };
+    return typeof raw.repository === "string" ? raw.repository.toLowerCase() : undefined;
+  } catch (_e) {
+    return undefined;
+  }
+}
+
 /** The issue check's memory for a session: bodies denied for warnings (pull-me's rule), the one toast. */
 type IssueState = { warned: Set<string>; noted: boolean };
 
@@ -368,6 +400,11 @@ export const register: Register = on => {
     const root = await rootOf($, cwd, roots);
     if (!root) return next(e);
     if (issue) {
+      // The guard is for the repository plan-me keeps; an issue on another repository is that repository's business.
+      // Without a configured repository the guard cannot tell, so it keeps denying.
+      const other = ghIssueRepo(e.command);
+      const own = other ? await configRepo($, root) : undefined;
+      if (other && own && other !== own) return next(e);
       const gh = parseGhIssue(e.command);
       const withBody = issue !== "close" && gh && (gh.body !== undefined || gh.bodyFile !== undefined);
       const found = withBody ? await checkBody($, issues, root, cwd, gh, `gh issue ${issue}`) : undefined;
