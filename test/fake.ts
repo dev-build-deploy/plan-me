@@ -14,6 +14,8 @@ export class FakeApi implements PlanApi {
   labels = new Set<string>();
   boards = new Map<string, Set<string>>();
   calls: string[] = [];
+  /** How often the whole backlog was read (listIssues): the cost the Action's per-event work must avoid. */
+  reads = 0;
   private counter = 1;
 
   constructor(
@@ -39,6 +41,7 @@ export class FakeApi implements PlanApi {
   }
 
   async listIssues(includeClosed: boolean): Promise<RawIssue[]> {
+    this.reads++;
     return [...this.issues.values()].filter(i => includeClosed || i.open).map(i => this.copy(i));
   }
 

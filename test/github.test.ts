@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { appendLine, GitHubApi, OctokitLike, parseBodyLinks } from "../src/github";
+import { appendLine, GitHubApi, isRateLimit, OctokitLike, parseBodyLinks } from "../src/github";
 
 type Call = { query: string; vars?: Record<string, unknown> };
 
@@ -253,5 +253,26 @@ describe("body helpers", () => {
       blockedBy: [1, 2, 3],
       children: [],
     });
+  });
+});
+
+describe("isRateLimit", () => {
+  test("GitHub's rate limit errors, REST and GraphQL", () => {
+    expect(
+      isRateLimit(
+        new Error(
+          "Request failed due to following response errors:\n - API rate limit already exceeded for installation ID 1."
+        )
+      )
+    ).toBe(true);
+    expect(isRateLimit(Object.assign(new Error("API rate limit exceeded for user ID 1."), { status: 403 }))).toBe(true);
+    expect(isRateLimit(Object.assign(new Error("You have exceeded a secondary rate limit."), { status: 403 }))).toBe(
+      true
+    );
+    expect(isRateLimit(Object.assign(new Error("Resource not accessible by integration"), { status: 403 }))).toBe(
+      false
+    );
+    expect(isRateLimit(Object.assign(new Error("rate limit"), { status: 500 }))).toBe(false);
+    expect(isRateLimit(new Error("Bad credentials"))).toBe(false);
   });
 });

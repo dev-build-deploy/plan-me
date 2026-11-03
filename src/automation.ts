@@ -3,10 +3,11 @@
  * SPDX-License-Identifier: MIT
  */
 
+import { RawIssue } from "./api";
 import { Backlog, FieldValues } from "./backlog";
 import { componentLabel, SelectField } from "./config";
 import { checkIssue, IssueCheckOptions, IssueReport, problemLines, skeletonFor } from "./issue-check";
-import { Item } from "./item";
+import { compareItems, Item, toItem, toItems } from "./item";
 import { COMPONENT_HEADING, parseFormAnswers } from "./templates";
 
 /** The parts of a pull request event plan-me reads. */
@@ -86,47 +87,76 @@ function unblockable(item: Item, hadBlockers: boolean): boolean {
   return item.open && item.status === "blocked" && item.blockedBy.length === 0 && hadBlockers;
 }
 
-/**
- * Keeps the open backlog consistent: a missing Priority gets the default (and a comment), a missing Status becomes
- * open, and blocked items whose blockers are all closed go back to open (with a comment). Idempotent.
- * @param only Restrict to these issue numbers (e.g. the issue of an `issues` event)
- */
-export async function sweep(backlog: Backlog, only?: number[]): Promise<string[]> {
+/** One item's sweep: the unblock, a missing Status and a missing Priority. */
+async function sweepItem(backlog: Backlog, item: Item, hadBlockers: boolean, raw?: RawIssue): Promise<string[]> {
   const lines: string[] = [];
-  const raws = await backlog.api.listIssues(false);
-  const hadBlockers = new Map(raws.map(r => [r.number, r.blockedBy.length > 0]));
-  const fieldsOf = new Map(raws.map(r => [r.number, r]));
   const config = backlog.config;
-  for (const item of await backlog.list({ state: "open" })) {
-    if (only && !only.includes(item.number)) continue;
-    if (!config.boards[item.component]) continue;
-    if (unblockable(item, hadBlockers.get(item.number) ?? false)) {
-      await backlog.setStatus(item.number, "open");
-      await backlog.api.comment(item.number, "plan-me: unblocked, all blockers are closed.");
-      lines.push(`#${item.number} unblocked`);
-    }
-    const raw = fieldsOf.get(item.number);
-    const values = raw?.boards[config.boards[item.component].title] ?? {};
-    if (values[config.fields.status.name] === undefined && item.status === "open") {
-      await backlog.setStatus(item.number, "open", true);
-      lines.push(`#${item.number} status open`);
-    }
-    const dflt = config.fields.priority.default;
-    if (item.priority === undefined && dflt) {
-      await backlog.update(item.number, { priority: dflt });
-      await backlog.api.comment(item.number, `plan-me: no priority set, defaulted to ${dflt}.`);
-      lines.push(`#${item.number} priority ${dflt}`);
-    }
+  if (!config.boards[item.component]) return lines;
+  if (unblockable(item, hadBlockers)) {
+    await backlog.setStatus(item.number, "open");
+    await backlog.api.comment(item.number, "plan-me: unblocked, all blockers are closed.");
+    lines.push(`#${item.number} unblocked`);
+  }
+  const values = raw?.boards[config.boards[item.component].title] ?? {};
+  if (values[config.fields.status.name] === undefined && item.status === "open") {
+    await backlog.setStatus(item.number, "open", true);
+    lines.push(`#${item.number} status open`);
+  }
+  const dflt = config.fields.priority.default;
+  if (item.priority === undefined && dflt) {
+    await backlog.update(item.number, { priority: dflt });
+    await backlog.api.comment(item.number, `plan-me: no priority set, defaulted to ${dflt}.`);
+    lines.push(`#${item.number} priority ${dflt}`);
   }
   return lines;
 }
 
-/** An issue was closed: its status becomes done, and its dependents are unblocked when free. */
+/**
+ * Keeps the open backlog consistent: a missing Priority gets the default (and a comment), a missing Status becomes
+ * open, and blocked items whose blockers are all closed go back to open (with a comment). Idempotent.
+ * @param only Restrict to these issue numbers (e.g. the issue of an `issues` event). With native dependencies only
+ * those issues are read; otherwise (body-line blockers) the open backlog is read once to resolve them.
+ */
+export async function sweep(backlog: Backlog, only?: number[]): Promise<string[]> {
+  const config = backlog.config;
+  const native = only !== undefined && (await backlog.api.features()).dependencies;
+  const raws = native
+    ? (await Promise.all(only.map(async n => backlog.api.getIssue(n)))).filter((r): r is RawIssue => !!r?.open)
+    : await backlog.api.listIssues(false);
+  const rawOf = new Map(raws.map(r => [r.number, r]));
+  const items = (native ? raws.map(r => toItem(config, r)) : toItems(config, raws, false))
+    .filter(i => i.open && (!only || only.includes(i.number)))
+    .sort((a, c) => compareItems(config, a, c));
+  const lines: string[] = [];
+  for (const item of items) {
+    const raw = rawOf.get(item.number);
+    lines.push(...(await sweepItem(backlog, item, (raw?.blockedBy.length ?? 0) > 0, raw)));
+  }
+  return lines;
+}
+
+/**
+ * An issue was closed: its status becomes done, and its dependents are unblocked when free. With native dependencies
+ * only the issues it blocked are read (a burst of closes stays cheap); otherwise the whole backlog is swept.
+ */
 export async function onIssueClosed(backlog: Backlog, number: number): Promise<string[]> {
   const lines: string[] = [];
   const outcome = await backlog.done(number);
   if (outcome.changed) lines.push(`#${number} done`);
-  return [...lines, ...(await sweep(backlog))];
+  if (!(await backlog.api.features()).dependencies) return [...lines, ...(await sweep(backlog))];
+  const closed = await backlog.api.getIssue(number);
+  const dependents = (closed?.blocking ?? []).filter(l => l.open !== false).map(l => l.number);
+  if (dependents.length === 0) return lines;
+  for (const n of dependents) {
+    const raw = await backlog.api.getIssue(n);
+    if (!raw?.open) continue;
+    const item = toItem(backlog.config, raw);
+    if (!backlog.config.boards[item.component] || !unblockable(item, raw.blockedBy.length > 0)) continue;
+    await backlog.setStatus(n, "open");
+    await backlog.api.comment(n, "plan-me: unblocked, all blockers are closed.");
+    lines.push(`#${n} unblocked`);
+  }
+  return lines;
 }
 
 /** The option key for a form answer (an option name or key); free text for a field without options. */
