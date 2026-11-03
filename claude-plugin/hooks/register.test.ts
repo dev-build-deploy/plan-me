@@ -3,7 +3,16 @@
 
 import { expect, test } from "claude-code/testing";
 
-import { bodyHash, decisionChanges, ghIssue, gitCommit, parseGhIssue, parsePlanMeNew, relative } from "./register";
+import {
+  bodyHash,
+  decisionChanges,
+  ghIssue,
+  ghIssueRepo,
+  gitCommit,
+  parseGhIssue,
+  parsePlanMeNew,
+  relative,
+} from "./register";
 
 const ROOT = "/private/tmp/plan-me-plugin-test";
 const FORM = "# plan-me:sha256=abc\nname: Bug\n";
@@ -81,6 +90,33 @@ test("gh issue create, new, edit and close are denied with the plan-me command t
   expect((await t.call(bash("gh issue new -t x"))).text).toContain("plan-me new");
   expect((await t.call(bash("gh issue edit 12 --add-label bug"))).text).toContain("plan-me start");
   expect((await t.call(bash("cd web && gh -R octo-org/notes issue close 12"))).text).toContain("plan-me done");
+});
+
+test("gh issue commands aimed at another repository with -R or --repo pass (#39)", async ($, on) => {
+  const config = JSON.stringify({ repository: "Org/App" });
+  const t = await setup($, on, { files: { [`${ROOT}/.plan-me.json`]: config } });
+  for (const command of [
+    'gh issue create -R org/tool --title "x" --body-file body.md',
+    "gh issue new --repo=org/tool -t x",
+    "gh -R org/tool issue edit 3 --add-label bug",
+    'cd /tmp && gh issue close 4 --repo "org/tool"',
+  ]) {
+    expect((await t.call(bash(command))).reached).toBeDefined();
+  }
+  for (const command of [
+    "gh issue create -R org/app -t x",
+    "gh issue close 4 --repo https://github.com/ORG/APP",
+    'gh issue create -t x --body "see -R org/tool"',
+  ]) {
+    const r = await t.call(bash(command));
+    expect(r.reached).toBeUndefined();
+    expect(r.text).toContain("plan-me");
+  }
+});
+
+test("without a repository in .plan-me.json, -R still meets the guard", async ($, on) => {
+  const t = await setup($, on);
+  expect((await t.call(bash("gh issue create -R org/tool -t x"))).reached).toBeUndefined();
 });
 
 test("gh issue view, list and comment pass, and so does a mention in text", async ($, on) => {
@@ -177,6 +213,11 @@ test("the parsers", () => {
   expect(ghIssue("gh issue create")).toBe("create");
   expect(ghIssue("x; gh --repo=o/r issue edit 3")).toBe("edit");
   expect(ghIssue("gh issue view 3")).toBeUndefined();
+  expect(ghIssueRepo("gh issue create -R Org/Tool -t x")).toBe("org/tool");
+  expect(ghIssueRepo("x && gh --repo=o/r issue edit 3; gh -R a/b pr view")).toBe("o/r");
+  expect(ghIssueRepo("gh issue close 3 -R github.com/o/r.git")).toBe("o/r");
+  expect(ghIssueRepo("gh issue create -t '-R o/r'")).toBeUndefined();
+  expect(ghIssueRepo("gh issue view 3 -R o/r")).toBeUndefined();
   expect(ghIssue("gh issues")).toBeUndefined();
   expect(gitCommit("git -C web commit --amend")).toEqual({ commit: true, stages: false });
   expect(gitCommit("git commit --all -m x").stages).toBe(true);
