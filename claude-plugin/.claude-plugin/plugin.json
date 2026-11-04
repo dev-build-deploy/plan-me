@@ -1,6 +1,6 @@
 {
   "name": "plan-me",
-  "version": "0.5.1",
+  "version": "1.0.0",
   "description": "Claude Code companion of PlanMe: the backlog and decision commands as MCP tools; checks the issues it writes (plan-me new, the MCP new) for their type, sections and plain prose, as pull-me does for pull requests; denies gh issue create/edit/close and hand edits of the generated decisions index or issue forms; checks staged decision files before git commit",
   "author": { "name": "Kevin de Jong" },
   "homepage": "https://github.com/dev-build-deploy/plan-me",
