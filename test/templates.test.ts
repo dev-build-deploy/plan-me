@@ -93,7 +93,7 @@ describe("writing the forms", () => {
       "Component",
       "Priority",
       "Role",
-      "Size",
+      "Effort",
     ]);
     const byLabel = (label: string): Element | undefined => bug.body.find(e => e.attributes.label === label);
     expect(byLabel("Steps to reproduce")?.validations?.required).toBe(true);
@@ -101,10 +101,10 @@ describe("writing the forms", () => {
       expect(byLabel(label)?.validations?.required).toBe(true);
     }
     expect(byLabel("Component")?.attributes).toMatchObject({ options: ["api", "web", "mobile"], default: 1 });
-    expect(byLabel("Priority")?.attributes).toMatchObject({ options: ["P1", "P2", "P3"], default: 1 });
+    expect(byLabel("Priority")?.attributes).toMatchObject({ options: ["Urgent", "High", "Medium", "Low"], default: 2 });
     expect(byLabel("Role")?.attributes.options).toEqual(["lead", "backend", "frontend", "user"]);
-    expect(byLabel("Size")?.attributes).toMatchObject({ options: ["XS", "S", "M", "L", "XL"] });
-    expect(byLabel("Size")?.attributes.default).toBeUndefined();
+    expect(byLabel("Effort")?.attributes).toMatchObject({ options: ["High", "Medium", "Low"] });
+    expect(byLabel("Effort")?.attributes.default).toBeUndefined();
   });
 
   test("types the organization lacks use the type label; the decision form explains ask and decide", () => {
@@ -231,7 +231,7 @@ describe("hand edits, configuration changes and the check", () => {
     fs.unlinkSync(path.join(root, DIR, "task.yml"));
     const types = ["Feature", "Bug", "Task", "Design", "Decision"];
     const changed = resolveConfig({ ...RAW, types });
-    const p3 = resolveConfig({ ...RAW, types, fields: { ...RAW.fields, priority: { default: "P3" } } });
+    const p3 = resolveConfig({ ...RAW, types, fields: { ...RAW.fields, priority: { default: "low" } } });
     const problems = checkTemplates(root, p3, { issueTypes: ORG_TYPES });
     expect(problems).toContain(`${DIR}/task.yml: missing; run \`plan-me templates\``);
     expect(problems).toContain(`${DIR}/bug.yml: stale (the configuration changed); run \`plan-me templates\``);
@@ -298,7 +298,7 @@ describe("parseFormAnswers", () => {
       "",
       "api",
       "",
-      "### Size",
+      "### Effort",
       "",
       "None",
     ].join("\r\n");

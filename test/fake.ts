@@ -19,7 +19,13 @@ export class FakeApi implements PlanApi {
   private counter = 1;
 
   constructor(
-    readonly feat: Features = { subIssues: true, dependencies: true, issueTypes: ["Feature", "Bug", "Task"] }
+    readonly feat: Features = {
+      subIssues: true,
+      dependencies: true,
+      issueTypes: ["Feature", "Bug", "Task"],
+      issueFieldsSupported: false,
+      issueFields: [],
+    }
   ) {}
 
   async features(): Promise<Features> {
@@ -37,6 +43,7 @@ export class FakeApi implements PlanApi {
         .filter(i => i.blockedBy.some(b => b.number === raw.number))
         .map(i => ({ number: i.number, open: i.open })),
       boards: JSON.parse(JSON.stringify(raw.boards)),
+      issueFields: { ...raw.issueFields },
     };
   }
 
@@ -64,6 +71,7 @@ export class FakeApi implements PlanApi {
       blockedBy: [],
       blocking: [],
       boards: {},
+      issueFields: {},
       ...partial,
     };
     this.issues.set(number, raw);
@@ -146,6 +154,30 @@ export class FakeApi implements PlanApi {
     this.calls.push(`fields #${issue.number} ${JSON.stringify(values)}`);
     const raw = this.get(issue.number);
     raw.boards[board.title] = { ...(raw.boards[board.title] ?? {}), ...values };
+  }
+
+  /** The organization's issue fields (name -> option names), when the features support them. */
+  orgFields = new Map<string, string[]>();
+
+  async setIssueFields(issue: RawIssue, values: Record<string, string>): Promise<void> {
+    this.calls.push(`issue fields #${issue.number} ${JSON.stringify(values)}`);
+    for (const [name, value] of Object.entries(values)) {
+      if (!this.orgFields.get(name)?.includes(value)) throw new Error(`no issue field option ${name}=${value}`);
+    }
+    const raw = this.get(issue.number);
+    raw.issueFields = { ...raw.issueFields, ...values };
+  }
+
+  async ensureIssueFields(fields: FieldSpec[], dryRun: boolean): Promise<string[]> {
+    const actions: string[] = [];
+    for (const f of fields) {
+      const have = this.orgFields.get(f.name);
+      const missing = f.options.filter(o => !have?.includes(o));
+      if (!have) actions.push(`create issue field "${f.name}"`);
+      else if (missing.length > 0) actions.push(`add options ${missing.join(", ")} to issue field "${f.name}"`);
+      if (!dryRun) this.orgFields.set(f.name, [...(have ?? []), ...missing]);
+    }
+    return actions;
   }
 
   async ensureLabels(labels: LabelConfig[], dryRun: boolean): Promise<string[]> {

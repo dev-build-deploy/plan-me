@@ -57,13 +57,13 @@ describe("MCP server", () => {
       "### Why\n\nUsers ask.\n\n### Context\n\nThe app.\n\n### What\n\nAdd it.\n\n### Done when\n\n- [ ] Added.";
     const created = await client.callTool({
       name: "new",
-      arguments: { title: "From MCP", priority: "P1", type: "Task", body },
+      arguments: { title: "From MCP", priority: "high", type: "Task", body },
     });
     expect((created.content as { text: string }[])[0].text).toBe(
-      "#1 created #1; status - -> open; priority - -> P1\n#1 [game P1 open] From MCP"
+      "#1 created #1; status - -> open; priority - -> high\n#1 [game high open] From MCP"
     );
     const json = await client.callTool({ name: "next", arguments: { json: true } });
-    expect(JSON.parse((json.content as { text: string }[])[0].text)[0]).toMatchObject({ number: 1, priority: "P1" });
+    expect(JSON.parse((json.content as { text: string }[])[0].text)[0]).toMatchObject({ number: 1, priority: "high" });
     const bad = await client.callTool({ name: "show", arguments: { ref: "nope" } });
     expect(bad.isError).toBe(true);
     const checked = await client.callTool({ name: "check_issue", arguments: { body, type: "Task", title: "x" } });

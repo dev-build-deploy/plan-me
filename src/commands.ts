@@ -103,7 +103,7 @@ const filters = {
   component: z.string().optional().describe("Only this component"),
   role: z.string().optional().describe("Only this role"),
   status: z.enum(STATUSES).optional().describe("Only this status"),
-  priority: z.string().optional().describe("Only this priority (P1, P2, P3)"),
+  priority: z.string().optional().describe("Only this priority (urgent, high, medium, low)"),
   type: z.string().optional().describe("Only this type (Feature, Bug, Epic, ...)"),
   parent: z.number().optional().describe("Only the children of this epic"),
 };
@@ -135,7 +135,7 @@ function define<S extends z.ZodRawShape>(spec: CommandSpec<S>): CommandSpec<S> {
 export const COMMANDS = {
   next: define({
     description:
-      "The next item to pick up: open and unblocked, P1 before P2 before P3; in-progress and needs-decision first",
+      "The next item to pick up: open and unblocked, the most urgent priority first; in-progress and needs-decision first",
     input: { ...filters, limit: z.number().int().positive().optional().describe("How many (default 1)") },
     mutates: false,
     run: onBacklog(async (b, a) => itemsResult(b, await b.next(a as Filters, a.limit ?? 1))),
@@ -176,7 +176,7 @@ export const COMMANDS = {
       priority: z.string().optional(),
       component: z.string().optional(),
       role: z.string().optional(),
-      size: z.string().optional(),
+      effort: z.string().optional(),
       parent: ref.optional().describe("The parent epic"),
       blockedBy: z.array(ref).optional(),
       design: z.array(z.string()).optional().describe("Design doc paths or URLs"),

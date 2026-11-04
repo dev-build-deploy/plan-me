@@ -3,7 +3,17 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { Features, FieldSpec, IssueComment, IssueUpdate, Link, NewIssue, PlanApi, RawIssue } from "./api";
+import {
+  Features,
+  FieldSpec,
+  IssueComment,
+  IssueFieldInfo,
+  IssueUpdate,
+  Link,
+  NewIssue,
+  PlanApi,
+  RawIssue,
+} from "./api";
 import { BoardConfig, LabelConfig } from "./config";
 
 /** The two Octokit calls plan-me uses (satisfied by `@actions/github`'s getOctokit and by test mocks). */
@@ -19,6 +29,7 @@ const MAX_BOARDS_PER_ISSUE = 10;
 const MAX_FIELD_VALUES = 30;
 const MAX_PROJECTS = 100;
 const MAX_FIELDS = 50;
+const MAX_ISSUE_FIELDS = 50;
 const DEFAULT_LABEL_COLOR = "ededed";
 const DEFAULT_OPTION_COLOR = "GRAY";
 
@@ -42,7 +53,9 @@ type GqlIssue = {
   blockedBy?: { nodes: GqlLink[] };
   blocking?: { nodes: GqlLink[] };
   projectItems: { nodes: { project: { title: string }; fieldValues: { nodes: Node[] } }[] };
+  issueFieldValues?: { nodes: Node[] };
 };
+type GqlIssueField = { id?: string; name?: string; dataType?: string; options?: IssueFieldInfo["options"] };
 type GqlLink = { number: number; state: string };
 type ProjectField = {
   id: string;
@@ -60,6 +73,19 @@ const PROJECT_FIELDS = `id number title fields(first: ${MAX_FIELDS}) { nodes {
   ... on ProjectV2FieldCommon { id name dataType }
   ... on ProjectV2SingleSelectField { options { id name color description } } } }`;
 
+const ISSUE_FIELD_VALUES = `issueFieldValues(first: ${MAX_ISSUE_FIELDS}) { nodes {
+  ... on IssueFieldSingleSelectValue { name field { ... on IssueFieldCommon { name } } }
+  ... on IssueFieldTextValue { value field { ... on IssueFieldCommon { name } } } } }`;
+const ISSUE_FIELDS = `issueFields(first: ${MAX_ISSUE_FIELDS}) { nodes {
+  ... on IssueFieldCommon { name dataType } ... on IssueFieldSingleSelect { id options { id name color description } } } }`;
+
+/** The single-select issue fields from a GraphQL `issueFields` connection. */
+function toIssueFields(nodes: GqlIssueField[] | undefined): IssueFieldInfo[] {
+  return (nodes ?? [])
+    .filter(n => n.dataType === "SINGLE_SELECT" && n.id && n.name)
+    .map(n => ({ id: n.id as string, name: n.name as string, options: n.options ?? [] }));
+}
+
 /** Builds the issue fragment for the detected features. */
 function issueFields(f: Features): string {
   const link = `(first: ${MAX_LINKS}) { nodes { number state } }`;
@@ -69,6 +95,7 @@ function issueFields(f: Features): string {
     f.issueTypes.length > 0 ? "issueType { name }" : "",
     f.subIssues ? `parent { number } subIssues${link}` : "",
     f.dependencies ? `blockedBy${link} blocking${link}` : "",
+    f.issueFieldsSupported ? ISSUE_FIELD_VALUES : "",
     FIELD_VALUES,
   ].join("\n");
 }
@@ -97,6 +124,12 @@ export function toRawIssue(i: GqlIssue, f: Features): RawIssue {
     }
     boards[item.project.title] = values;
   }
+  const issueFields: Record<string, string> = {};
+  for (const v of i.issueFieldValues?.nodes ?? []) {
+    const field = (v.field as { name?: string } | undefined)?.name;
+    const value = (v.name ?? v.value) as string | undefined;
+    if (field && value !== undefined && value !== null) issueFields[field] = String(value);
+  }
   const fallback = parseBodyLinks(i.body ?? "");
   return {
     nodeId: i.id,
@@ -112,6 +145,7 @@ export function toRawIssue(i: GqlIssue, f: Features): RawIssue {
     blockedBy: f.dependencies ? toLinks(i.blockedBy?.nodes) : fallback.blockedBy.map(number => ({ number })),
     blocking: f.dependencies ? toLinks(i.blocking?.nodes) : [],
     boards,
+    issueFields,
   };
 }
 
@@ -134,8 +168,8 @@ export function appendLine(body: string, line: string): string {
 }
 
 /**
- * The Octokit implementation of PlanApi: REST for issues, comments and labels; GraphQL for Projects v2, sub-issues,
- * dependencies and issue types (all native when GitHub has them; body lines otherwise).
+ * The Octokit implementation of PlanApi: REST for issues, comments and labels; GraphQL for Projects v2, issue fields,
+ * sub-issues, dependencies and issue types (all native when GitHub has them; body lines or boards otherwise).
  */
 export class GitHubApi implements PlanApi {
   private readonly owner: string;
@@ -160,19 +194,36 @@ export class GitHubApi implements PlanApi {
     if (this.featureCache) return this.featureCache;
     const data = await this.octokit.graphql<{
       __type: { fields: { name: string }[] };
-      repository: { issueTypes?: { nodes: { name: string }[] } | null };
+      repo?: { fields: { name: string }[] } | null;
+      repository: { owner?: { __typename: string }; issueTypes?: { nodes: { name: string }[] } | null };
     }>(
       `query($owner: String!, $name: String!) { __type(name: "Issue") { fields { name } }
-        repository(owner: $owner, name: $name) { issueTypes(first: 50) { nodes { name } } } }`,
+        repo: __type(name: "Repository") { fields { name } }
+        repository(owner: $owner, name: $name) { owner { __typename } issueTypes(first: 50) { nodes { name } } } }`,
       { owner: this.owner, name: this.repo }
     );
     const names = new Set(data.__type.fields.map(f => f.name));
+    const supported =
+      names.has("issueFieldValues") &&
+      (data.repo?.fields ?? []).some(f => f.name === "issueFields") &&
+      data.repository.owner?.__typename === "Organization";
     this.featureCache = {
       subIssues: names.has("subIssues") && names.has("parent"),
       dependencies: names.has("blockedBy") && names.has("blocking"),
       issueTypes: (data.repository.issueTypes?.nodes ?? []).map(t => t.name),
+      issueFieldsSupported: supported,
+      issueFields: supported ? await this.loadIssueFields() : [],
     };
     return this.featureCache;
+  }
+
+  /** The repository's issue fields (its organization's). */
+  private async loadIssueFields(): Promise<IssueFieldInfo[]> {
+    const data = await this.octokit.graphql<{ repository: { issueFields: { nodes: GqlIssueField[] } | null } }>(
+      `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { ${ISSUE_FIELDS} } }`,
+      { owner: this.owner, name: this.repo }
+    );
+    return toIssueFields(data.repository.issueFields?.nodes);
   }
 
   async listIssues(includeClosed: boolean): Promise<RawIssue[]> {
@@ -233,6 +284,7 @@ export class GitHubApi implements PlanApi {
       blockedBy: [],
       blocking: [],
       boards: {},
+      issueFields: {},
     };
   }
 
@@ -393,6 +445,72 @@ export class GitHubApi implements PlanApi {
         { projectId: project.id, itemId: added.addProjectV2ItemById.item.id, fieldId: field.id, value: fieldValue }
       );
     }
+  }
+
+  async setIssueFields(issue: RawIssue, values: Record<string, string>): Promise<void> {
+    const { issueFields } = await this.features();
+    const inputs = Object.entries(values).map(([name, value]) => {
+      const field = issueFields.find(f => f.name === name);
+      if (!field) throw new Error(`the organization has no issue field "${name}": run plan-me init`);
+      const option = field.options.find(o => o.name === value);
+      if (!option) throw new Error(`issue field "${name}" has no option "${value}": run plan-me init`);
+      return { fieldId: field.id, singleSelectOptionId: option.id };
+    });
+    if (inputs.length === 0) return;
+    await this.octokit.graphql(
+      `mutation($issueId: ID!, $issueFields: [IssueFieldCreateOrUpdateInput!]!) {
+        setIssueFieldValue(input: { issueId: $issueId, issueFields: $issueFields }) { issue { number } } }`,
+      { issueId: issue.nodeId, issueFields: inputs }
+    );
+  }
+
+  async ensureIssueFields(fields: FieldSpec[], dryRun: boolean): Promise<string[]> {
+    const { issueFields, issueFieldsSupported } = await this.features();
+    if (!issueFieldsSupported) return [];
+    const actions: string[] = [];
+    const where = `on organization "${this.owner}"`;
+    for (const spec of fields) {
+      const field = issueFields.find(f => f.name === spec.name);
+      if (!field) {
+        actions.push(`create issue field "${spec.name}" ${where}`);
+        if (dryRun) continue;
+        const { organization } = await this.octokit.graphql<{ organization: { id: string } }>(
+          `query($login: String!) { organization(login: $login) { id } }`,
+          { login: this.owner }
+        );
+        await this.octokit.graphql(
+          `mutation($input: CreateIssueFieldInput!) { createIssueField(input: $input) { clientMutationId } }`,
+          {
+            input: {
+              ownerId: organization.id,
+              name: spec.name,
+              dataType: "SINGLE_SELECT",
+              visibility: "ALL",
+              options: spec.options.map((name, i) => ({ name, color: DEFAULT_OPTION_COLOR, priority: i + 1 })),
+            },
+          }
+        );
+        continue;
+      }
+      const missing = spec.options.filter(o => !field.options.some(h => h.name === o));
+      if (missing.length === 0) continue;
+      actions.push(`add options ${missing.join(", ")} to issue field "${spec.name}" ${where}`);
+      if (dryRun) continue;
+      const options = [
+        ...field.options.map(o => ({
+          name: o.name,
+          color: o.color ?? DEFAULT_OPTION_COLOR,
+          description: o.description,
+        })),
+        ...missing.map(name => ({ name, color: DEFAULT_OPTION_COLOR, description: "" })),
+      ].map((o, i) => ({ ...o, description: o.description ?? "", priority: i + 1 }));
+      await this.octokit.graphql(
+        `mutation($input: UpdateIssueFieldInput!) { updateIssueField(input: $input) { clientMutationId } }`,
+        { input: { id: field.id, options } }
+      );
+    }
+    if (!dryRun && actions.length > 0) this.featureCache = undefined;
+    return actions;
   }
 
   async ensureLabels(labels: LabelConfig[], dryRun: boolean): Promise<string[]> {

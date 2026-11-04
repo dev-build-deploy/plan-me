@@ -12,11 +12,12 @@ by default, `--json` everywhere, idempotent commands, and a local snapshot to gr
 
 - **One board per component**: each component (e.g. `api`, `web`, `mobile`) has its own Projects v2
   board; an issue's `component:<name>` label picks it.
-- **Fields**: Status (open, in-progress, needs-decision, blocked, done), Priority (P1-P3), Role (the agent role that
-  does it), Size.
+- **Fields**: Status (open, in-progress, needs-decision, blocked, done) and Role (the agent role that does it) on
+  the board; Priority (urgent, high, medium, low) and Effort (high, medium, low) as the organization's
+  [issue fields](./docs/config.md#issue-fields) (on the board for a repository owned by a user).
 - **Issue types, epics and dependencies**: the organization's issue types (labels for the types it lacks), epics with
   sub-issues, "blocked by" dependencies.
-- **Pick-up order**: `plan-me next` gives the open, unblocked item: P1 before P2 before P3; within a priority
+- **Pick-up order**: `plan-me next` gives the open, unblocked item: urgent, then high, medium, low; within a priority
   in-progress and needs-decision first.
 - **Import**: a folder of markdown item files with front matter, or a markdown line list; rerunnable; `--update`
   rewrites the issues of an earlier import in place.
@@ -28,17 +29,17 @@ by default, `--json` everywhere, idempotent commands, and a local snapshot to gr
   the Action and pre-commit; no configuration (below).
 - **Issue templates**: an issue form per type, with the same sections the issue check asks for (Bug: context, steps
   to reproduce, observed and expected behavior, additional context; Feature: context, problem, expected value,
-  acceptance criteria; ...) and the component, Priority, Role and Size, which the Action copies to the board; no
+  acceptance criteria; ...) and the component, Priority, Role and Effort, which the Action copies to the fields; no
   configuration (below).
 
 ```sh
 $ plan-me snapshot
 # plan-me snapshot octo-org/notes: 4 open items
 ## web
-#12 [web P1 in-progress frontend] Editor toolbar prototype
-#3 [web P1 open epic] Rich-text editor
-  #14 [web P1 open backend] Autosave endpoint — blocked by #12
-#20 [web P2 open user] Larger text for small screens
+#12 [web high in-progress frontend] Editor toolbar prototype
+#3 [web high open epic] Rich-text editor
+  #14 [web high open backend] Autosave endpoint — blocked by #12
+#20 [web medium open user] Larger text for small screens
 ```
 
 ## Native GitHub features and fallbacks
@@ -113,7 +114,7 @@ wrote docs/decisions/2026-11-01-lua-is-the-script-language.md
 wrote docs/decisions.md
 - lua-is-the-script-language · - · 2026-11-01 · current · - · Lua is the script language
 #42 comment; decision docs/decisions/2026-11-01-lua-is-the-script-language.md; status needs-decision -> in-progress
-#42 [game P2 in-progress] Which script language?
+#42 [game medium in-progress] Which script language?
 ```
 
 The guide: [docs/decisions.md](./docs/decisions.md).
@@ -169,9 +170,9 @@ from the configuration and with no extra settings:
   answered with `decide --question`; Epic: Outcome, Child items, Design docs). Feature: Context, Problem, Expected
   value, Acceptance criteria, Design docs. Bug: Context, Steps to reproduce, Observed behavior, Expected behavior,
   Additional context. The required ones are required in the form and by the issue check.
-- **The plan-me fields**: a Component dropdown from `boards`, and Priority, Role and Size. The form sets the
-  organization's issue type (else the `type:` label); the Action copies the answers to the labels and the board when
-  the issue is opened.
+- **The plan-me fields**: a Component dropdown from `boards`, and Priority, Role and Effort. The form sets the
+  organization's issue type (else the `type:` label); the Action copies the answers to the labels, the issue fields
+  and the board when the issue is opened.
 - **Rerunnable**: unchanged files report `up to date`; a form edited by hand is left alone (`--force` overwrites it);
   `plan-me templates check` for CI and the `plan-me-templates` pre-commit hook; SPDX headers from `.reuse-me.json`.
 

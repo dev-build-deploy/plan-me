@@ -162,7 +162,7 @@ function readOptions(args: string[], cmd: IssueCommand, short: Record<string, ke
       (cmd as Record<string, unknown>)[key] = eq ? eq[2] : (args[++i] ?? "");
     } else if (a.startsWith("-")) {
       if (
-        /^--(?:priority|component|role|size|parent|blocked-by|design|id|config|repo|label|assignee|milestone|project)$/.test(
+        /^--(?:priority|component|role|effort|parent|blocked-by|design|id|config|repo|label|assignee|milestone|project)$/.test(
           a
         ) ||
         /^-[clr]$/.test(a)

@@ -14,7 +14,7 @@ TypeScript SDK). It exposes the CLI's commands as tools, with the same behaviour
 | `list` | component, role, status, priority, type, parent, state | no |
 | `show` | ref | no |
 | `snapshot` | (none) | no |
-| `new` | title, body, type, priority, component, role, size, parent, blockedBy, design, id; the body must pass the issue check (refused with the findings otherwise; prose warnings come first in the answer) | yes |
+| `new` | title, body, type, priority, component, role, effort, parent, blockedBy, design, id; the body must pass the issue check (refused with the findings otherwise; prose warnings come first in the answer) | yes |
 | `check_issue` | body, type, title: the [issue check](./cli.md#the-issue-check), a tool error on errors | no |
 | `start` | ref, branch | yes |
 | `block` | ref, by | yes |

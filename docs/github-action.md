@@ -13,7 +13,7 @@ idempotent: rerunning an event changes nothing.
 | `pull_request` opened, edited, synchronize, reopened, ready_for_review | The issues it references move to in-progress: `Closes #n` (fixes, resolves), `Part of #n`, or the number in the branch name (`feat/12-x`; or a branch whose last segment is an item's marker id). |
 | `pull_request` closed and merged | `Closes` and branch issues: a Done comment ("Merged in #PR."), closed, status done. `Part of` issues stay in-progress. |
 | `issues` closed | Status done; dependents whose blockers are now all closed go from blocked back to open, with a comment. Only the issues the closed one blocked are read, so a burst of closes stays cheap (with GitHub's native dependencies; body-line blockers need the whole backlog). |
-| `issues` opened | An issue from one of plan-me's forms: its Component answer becomes the component label (unless it has one), its Priority, Role and Size answers the board fields; a Decision becomes needs-decision. Then it is kept consistent (below). |
+| `issues` opened | An issue from one of plan-me's forms: its Component answer becomes the component label (unless it has one), its Priority, Role and Effort answers the fields (Priority and Effort as issue fields where the organization has them); a Decision becomes needs-decision. Then it is kept consistent (below). |
 | `issues` opened, edited | The [issue check](./cli.md#the-issue-check) on its title, type and body (below). |
 | `issues` edited, labeled, reopened | That issue is kept consistent (below). |
 | `schedule`, `workflow_dispatch` | The whole open backlog is kept consistent. |
@@ -24,7 +24,7 @@ passes. See [decisions.md](./decisions.md). Likewise `templates check`: a genera
 stale for the configuration fails the run; a repository without plan-me's forms passes.
 
 Form answers: GitHub writes a submitted form as `### <label>` headings with the answers. The Action reads the
-`Component` heading and the headings named after the Priority, Role and Size fields (`fields.*.name`); an answer that
+`Component` heading and the headings named after the Priority, Role and Effort fields (`fields.*.name`); an answer that
 is no option of its field, or left empty (`_No response_`), is ignored. Only `opened` reads them, so later edits of the
 body never overwrite the board.
 

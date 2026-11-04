@@ -16,7 +16,7 @@ export interface FieldValues {
   status?: Status;
   priority?: string;
   role?: string;
-  size?: string;
+  effort?: string;
 }
 
 /** Filters for `list` and `next`. */
@@ -39,7 +39,7 @@ export interface NewItem {
   priority?: string;
   component?: string;
   role?: string;
-  size?: string;
+  effort?: string;
   /** The parent epic (a number, `#n` or a marker id). */
   parent?: string;
   /** The blockers (numbers, `#n` or marker ids). */
@@ -109,7 +109,7 @@ export class Backlog {
     return toItem(this.config, raw, known);
   }
 
-  /** Maps plan-me values to board field names and option names; validates keys. */
+  /** Maps plan-me values to field names and option names; validates keys. */
   private fieldValues(values: FieldValues): Record<string, string> {
     const out: Record<string, string> = {};
     const put = (field: SelectField, key: string | undefined, what: string): void => {
@@ -124,15 +124,23 @@ export class Backlog {
     put(f.status, values.status, "status");
     put(f.priority, values.priority, "priority");
     put(f.role, values.role, "role");
-    put(f.size, values.size, "size");
+    put(f.effort, values.effort, "effort");
     return out;
   }
 
-  /** Writes the values that differ from the current item; returns the action lines. */
+  /** Whether Priority and Effort are issue fields here (an organization's repository) rather than board fields. */
+  private async usesIssueFields(): Promise<boolean> {
+    return (await this.api.features()).issueFieldsSupported;
+  }
+
+  /**
+   * Writes the values that differ from the current item; returns the action lines. Priority and Effort go to the
+   * issue fields where the repository has them, the rest to the component's board.
+   */
   private async write(raw: RawIssue, current: Item | undefined, values: FieldValues): Promise<string[]> {
     const changed: FieldValues = {};
     const actions: string[] = [];
-    for (const key of ["status", "priority", "role", "size"] as const) {
+    for (const key of ["status", "priority", "role", "effort"] as const) {
       const value = values[key];
       if (value !== undefined && (current === undefined || current[key] !== value)) {
         (changed as Record<string, string>)[key] = value;
@@ -140,17 +148,35 @@ export class Backlog {
       }
     }
     if (actions.length === 0) return [];
-    const board = this.config.boards[componentOf(this.config, raw)];
-    if (!board) throw new Error(`no board for component "${componentOf(this.config, raw)}" in the config`);
-    await this.api.setFields(raw, board, this.fieldValues(changed));
+    const onIssue: FieldValues = {};
+    if (await this.usesIssueFields()) {
+      for (const key of ["priority", "effort"] as const) {
+        if (changed[key] === undefined) continue;
+        onIssue[key] = changed[key];
+        delete changed[key];
+      }
+    }
+    if (Object.keys(onIssue).length > 0) await this.api.setIssueFields(raw, this.fieldValues(onIssue));
+    if (Object.keys(changed).length > 0) {
+      const board = this.config.boards[componentOf(this.config, raw)];
+      if (!board) throw new Error(`no board for component "${componentOf(this.config, raw)}" in the config`);
+      await this.api.setFields(raw, board, this.fieldValues(changed));
+    }
     this.openCache = undefined;
     return actions;
   }
 
-  /** The board fields plan-me needs on every board. */
-  fieldSpecs(): FieldSpec[] {
+  /** The board fields plan-me needs on every board (Priority and Effort only where there are no issue fields). */
+  async fieldSpecs(): Promise<FieldSpec[]> {
     const f = this.config.fields;
-    return [f.status, f.priority, f.role, f.size].map(s => ({ name: s.name, options: Object.values(s.options) }));
+    const fields = (await this.usesIssueFields()) ? [f.status, f.role] : [f.status, f.priority, f.role, f.effort];
+    return fields.map(toSpec);
+  }
+
+  /** The issue fields plan-me needs on the organization (none where the repository can't have issue fields). */
+  async issueFieldSpecs(): Promise<FieldSpec[]> {
+    const f = this.config.fields;
+    return (await this.usesIssueFields()) ? [f.priority, f.effort].map(toSpec) : [];
   }
 
   /** The labels plan-me needs: one per component, one per type the repository has no issue type for, the extras. */
@@ -166,11 +192,17 @@ export class Backlog {
     ];
   }
 
-  /** `init`: creates the missing boards, fields, options and labels. Returns one line per action. */
+  /**
+   * `init`: creates the missing labels, the organization's missing issue fields and options (Priority, Effort), and
+   * the missing boards, board fields and options. Returns one line per action.
+   */
   async init(dryRun: boolean): Promise<string[]> {
     const actions = await this.api.ensureLabels(await this.labels(), dryRun);
+    const issueFields = await this.issueFieldSpecs();
+    if (issueFields.length > 0) actions.push(...(await this.api.ensureIssueFields(issueFields, dryRun)));
+    const boardFields = await this.fieldSpecs();
     for (const board of Object.values(this.config.boards)) {
-      actions.push(...(await this.api.ensureBoard(board, this.fieldSpecs(), dryRun)));
+      actions.push(...(await this.api.ensureBoard(board, boardFields, dryRun)));
     }
     return actions;
   }
@@ -195,7 +227,7 @@ export class Backlog {
     }
     const body = this.bodyFor(input);
     const priority = input.priority ?? this.config.fields.priority.default;
-    this.fieldValues({ priority, role: input.role, size: input.size }); // validate before creating
+    this.fieldValues({ priority, role: input.role, effort: input.effort }); // validate before creating
     const parent = input.parent ? await this.raw(input.parent) : undefined;
     const blockers = await Promise.all((input.blockedBy ?? []).map(async b => this.raw(b)));
 
@@ -210,7 +242,7 @@ export class Backlog {
       actions.push(`blocked by #${blocker.number}`);
     }
     const status: Status = blockers.some(b => b.open) ? "blocked" : "open";
-    actions.push(...(await this.write(raw, undefined, { status, priority, role: input.role, size: input.size })));
+    actions.push(...(await this.write(raw, undefined, { status, priority, role: input.role, effort: input.effort })));
     raw = (await this.api.getIssue(raw.number)) ?? raw;
     return { item: await this.item(raw), changed: true, actions };
   }
@@ -250,7 +282,7 @@ export class Backlog {
     return { item: await this.item(after), changed: actions.length > 0, actions };
   }
 
-  /** Sets priority, role or size (status has its own commands); idempotent. */
+  /** Sets priority, role or effort (status has its own commands); idempotent. */
   async update(ref: string | number, values: Omit<FieldValues, "status">): Promise<Outcome> {
     const raw = await this.raw(ref);
     const actions = await this.write(raw, await this.item(raw), values);
@@ -383,7 +415,7 @@ export class Backlog {
   }
 
   /**
-   * `next`: the open, unblocked, non-epic items in pick-up order (P1 before P2 before P3; within a priority
+   * `next`: the open, unblocked, non-epic items in pick-up order (by priority, the most urgent first; within a priority
    * in-progress and needs-decision first, then by number).
    * @param limit How many to return (default 1)
    */
@@ -404,6 +436,11 @@ export class Backlog {
   async snapshot(): Promise<string> {
     return formatSnapshot(this.config, toItems(this.config, await this.openIssues(), false));
   }
+}
+
+/** A select field as a FieldSpec (its option names, in order). */
+function toSpec(field: SelectField): FieldSpec {
+  return { name: field.name, options: Object.values(field.options) };
 }
 
 /** A new question's body: the Decision sections, the question under What (the question alone without a Decision type). */

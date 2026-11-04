@@ -99,7 +99,13 @@ describe("issues and schedule", () => {
   });
 
   test("body-line blockers (no native dependencies): a close still sweeps the backlog", async () => {
-    const api = new FakeApi({ subIssues: false, dependencies: false, issueTypes: [] });
+    const api = new FakeApi({
+      subIssues: false,
+      dependencies: false,
+      issueTypes: [],
+      issueFieldsSupported: false,
+      issueFields: [],
+    });
     const backlog = new Backlog(api, CONFIG);
     await backlog.create({ title: "Blocker" });
     await backlog.create({ title: "Dependent", blockedBy: ["1"] });
@@ -112,15 +118,15 @@ describe("issues and schedule", () => {
     api.add({ title: "Bare", labels: ["component:engine"] });
     for (let k = 0; k < 5; k++) api.add({ title: `Bare ${k}`, labels: ["component:engine"] });
     api.reads = 0;
-    expect(await sweep(fresh(api), [1])).toEqual(["#1 status open", "#1 priority P2"]);
+    expect(await sweep(fresh(api), [1])).toEqual(["#1 status open", "#1 priority medium"]);
     expect(api.reads).toBe(0);
   });
 
   test("missing priority gets the default and a comment; missing status becomes open", async () => {
     const { api, backlog } = setup();
     api.add({ title: "Bare", labels: ["component:engine"] });
-    expect(await sweep(backlog)).toEqual(["#1 status open", "#1 priority P2"]);
-    expect(api.comments.get(1)).toEqual(["plan-me: no priority set, defaulted to P2."]);
+    expect(await sweep(backlog)).toEqual(["#1 status open", "#1 priority medium"]);
+    expect(api.comments.get(1)).toEqual(["plan-me: no priority set, defaulted to medium."]);
     expect(await sweep(backlog)).toEqual([]);
   });
 });
@@ -149,14 +155,14 @@ describe("issues opened from a form", () => {
     const body = formBody({
       "Steps to reproduce": "1. Open a note",
       Component: "api",
-      Priority: "P1",
+      Priority: "High",
       Role: "backend",
-      Size: "_No response_",
+      Effort: "_No response_",
     });
     api.add({ title: "Crash on open", body, issueType: "Bug" });
-    expect(await onIssueOpened(backlog, 1)).toEqual(["#1 component api", "#1 priority - -> P1; role - -> backend"]);
+    expect(await onIssueOpened(backlog, 1)).toEqual(["#1 component api", "#1 priority - -> high; role - -> backend"]);
     expect(api.issues.get(1)?.labels).toEqual(["component:api"]);
-    expect(api.issues.get(1)?.boards.API).toEqual({ Priority: "P1", Role: "backend" });
+    expect(api.issues.get(1)?.boards.API).toEqual({ Priority: "High", Role: "backend" });
     expect(await onIssueOpened(backlog, 1)).toEqual([]);
     expect(await sweep(backlog, [1])).toEqual(["#1 status open"]);
   });

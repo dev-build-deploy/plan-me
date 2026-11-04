@@ -10,17 +10,19 @@ type Call = { query: string; vars?: Record<string, unknown> };
 /** A mocked Octokit: GraphQL answers picked by a matcher on the query text; REST calls recorded. */
 type Mock = { octokit: OctokitLike; graphql: Call[]; rest: { route: string; params?: Record<string, unknown> }[] };
 
-function mock(answers: [RegExp, unknown][], native = true): Mock {
+/** `owner`: who owns the repository; an Organization (with `native`) has issue fields. */
+function mock(answers: [RegExp, unknown][], native = true, owner = "User"): Mock {
   const graphql: Call[] = [];
   const rest: { route: string; params?: Record<string, unknown> }[] = [];
-  const fields = native ? ["subIssues", "parent", "blockedBy", "blocking"] : ["title"];
+  const fields = native ? ["subIssues", "parent", "blockedBy", "blocking", "issueFieldValues"] : ["title"];
   const octokit: OctokitLike = {
     graphql: (async (query: string, vars?: Record<string, unknown>) => {
       graphql.push({ query, vars });
       if (query.includes("__type")) {
         return {
           __type: { fields: fields.map(name => ({ name })) },
-          repository: { issueTypes: { nodes: native ? [{ name: "Bug" }] : [] } },
+          repo: { fields: (native ? ["issueFields"] : ["name"]).map(name => ({ name })) },
+          repository: { owner: { __typename: owner }, issueTypes: { nodes: native ? [{ name: "Bug" }] : [] } },
         };
       }
       const hit = answers.find(([re]) => re.test(query));
@@ -123,7 +125,17 @@ describe("GitHubApi", () => {
   test("fallback writes: sub-issue and blocker as body lines", async () => {
     const { octokit, rest } = mock([], false);
     const api = new GitHubApi(octokit, "o/r", "o");
-    const base = { title: "", open: true, url: "", labels: [], children: [], blockedBy: [], blocking: [], boards: {} };
+    const base = {
+      title: "",
+      open: true,
+      url: "",
+      labels: [],
+      children: [],
+      blockedBy: [],
+      blocking: [],
+      boards: {},
+      issueFields: {},
+    };
     await api.addSubIssue(
       { ...base, nodeId: "a", number: 1, body: "Epic" },
       { ...base, nodeId: "b", number: 2, body: "" }
@@ -155,6 +167,7 @@ describe("GitHubApi", () => {
       blockedBy: [],
       blocking: [],
       boards: {},
+      issueFields: {},
     };
     await api.addSubIssue({ ...base, nodeId: "A", number: 1 }, { ...base, nodeId: "B", number: 2 });
     await api.addBlockedBy({ ...base, nodeId: "B", number: 2 }, { ...base, nodeId: "C", number: 3 });
@@ -181,6 +194,7 @@ describe("GitHubApi", () => {
       blockedBy: [],
       blocking: [],
       boards: {},
+      issueFields: {},
     };
     await api.setFields(raw, { title: "Engine" }, { Status: "Todo", Role: "lead" });
     const updates = graphql.filter(c => c.query.includes("updateProjectV2ItemFieldValue")).map(c => c.vars);
@@ -201,7 +215,7 @@ describe("GitHubApi", () => {
     const api = new GitHubApi(octokit, "o/r", "o");
     const specs = [
       { name: "Status", options: ["Todo", "Blocked"] },
-      { name: "Priority", options: ["P1"] },
+      { name: "Priority", options: ["high"] },
     ];
     const dry = await api.ensureBoard({ title: "Engine" }, specs, true);
     expect(dry).toEqual(['add options Blocked to "Status" on "Engine"', 'create field "Priority" on "Engine"']);
@@ -238,6 +252,122 @@ describe("GitHubApi", () => {
     const raw = await api.createIssue({ title: "T", body: "b", labels: ["x"], issueType: "Bug" });
     expect(rest[0].params).toMatchObject({ title: "T", type: "Bug", labels: ["x"] });
     expect(raw).toMatchObject({ number: 9, nodeId: "I_9", issueType: "Bug" });
+  });
+  const PRIORITY_FIELD = {
+    id: "IF_p",
+    name: "Priority",
+    dataType: "SINGLE_SELECT",
+    options: [
+      { id: "po1", name: "Urgent", color: "RED", description: "Now" },
+      { id: "po2", name: "High", color: "ORANGE", description: null },
+    ],
+  };
+  const ORG_FIELDS: [RegExp, unknown] = [
+    /issueFields\(first/,
+    { repository: { issueFields: { nodes: [PRIORITY_FIELD, { name: "Start date", dataType: "DATE" }] } } },
+  ];
+
+  test("an organization's repository: reads the issue field values; a user's has no issue fields", async () => {
+    const values = {
+      issueFieldValues: {
+        nodes: [
+          { name: "High", field: { name: "Priority" } },
+          { value: "x", field: { name: "Notes" } },
+        ],
+      },
+    };
+    const org = mock(
+      [ORG_FIELDS, [/issue\(number/, { repository: { issue: issue(3, values) } }]],
+      true,
+      "Organization"
+    );
+    const api = new GitHubApi(org.octokit, "o/r", "o");
+    expect(await api.features()).toMatchObject({
+      issueFieldsSupported: true,
+      issueFields: [{ id: "IF_p", name: "Priority", options: [{ id: "po1" }, { id: "po2" }] }],
+    });
+    expect((await api.getIssue(3))?.issueFields).toEqual({ Priority: "High", Notes: "x" });
+    expect(org.graphql.find(c => c.query.includes("issue(number"))?.query).toContain("issueFieldValues");
+
+    const user = mock([[/issue\(number/, { repository: { issue: issue(3) } }]]);
+    const userApi = new GitHubApi(user.octokit, "o/r", "o");
+    expect(await userApi.features()).toMatchObject({ issueFieldsSupported: false, issueFields: [] });
+    expect((await userApi.getIssue(3))?.issueFields).toEqual({});
+    expect(user.graphql.find(c => c.query.includes("issue(number"))?.query).not.toContain("issueFieldValues");
+    expect(await userApi.ensureIssueFields([{ name: "Priority", options: ["High"] }], false)).toEqual([]);
+  });
+
+  test("setIssueFields resolves the field and option ids", async () => {
+    const { octokit, graphql } = mock([ORG_FIELDS, [/setIssueFieldValue/, {}]], true, "Organization");
+    const api = new GitHubApi(octokit, "o/r", "o");
+    const raw = {
+      nodeId: "I_1",
+      number: 1,
+      title: "",
+      body: "",
+      open: true,
+      url: "",
+      labels: [],
+      children: [],
+      blockedBy: [],
+      blocking: [],
+      boards: {},
+      issueFields: {},
+    };
+    await api.setIssueFields(raw, { Priority: "High" });
+    expect(graphql.find(c => c.query.includes("setIssueFieldValue"))?.vars).toEqual({
+      issueId: "I_1",
+      issueFields: [{ fieldId: "IF_p", singleSelectOptionId: "po2" }],
+    });
+    await expect(api.setIssueFields(raw, { Priority: "Low" })).rejects.toThrow(/no option "Low": run plan-me init/);
+    await expect(api.setIssueFields(raw, { Effort: "Low" })).rejects.toThrow(/no issue field "Effort"/);
+  });
+
+  test("ensureIssueFields creates missing fields and adds options keeping the existing ones", async () => {
+    const { octokit, graphql } = mock(
+      [
+        ORG_FIELDS,
+        [/organization\(login/, { organization: { id: "O_1" } }],
+        [/createIssueField\(/, {}],
+        [/updateIssueField\(/, {}],
+      ],
+      true,
+      "Organization"
+    );
+    const api = new GitHubApi(octokit, "o/r", "o");
+    const specs = [
+      { name: "Priority", options: ["Urgent", "High", "Low"] },
+      { name: "Effort", options: ["High", "Low"] },
+    ];
+    const dry = await api.ensureIssueFields(specs, true);
+    expect(dry).toEqual([
+      'add options Low to issue field "Priority" on organization "o"',
+      'create issue field "Effort" on organization "o"',
+    ]);
+    expect(graphql.some(c => c.query.includes("mutation"))).toBe(false);
+    await api.ensureIssueFields(specs, false);
+    expect(graphql.find(c => c.query.includes("updateIssueField("))?.vars).toEqual({
+      input: {
+        id: "IF_p",
+        options: [
+          { name: "Urgent", color: "RED", description: "Now", priority: 1 },
+          { name: "High", color: "ORANGE", description: "", priority: 2 },
+          { name: "Low", color: "GRAY", description: "", priority: 3 },
+        ],
+      },
+    });
+    expect(graphql.find(c => c.query.includes("createIssueField("))?.vars).toEqual({
+      input: {
+        ownerId: "O_1",
+        name: "Effort",
+        dataType: "SINGLE_SELECT",
+        visibility: "ALL",
+        options: [
+          { name: "High", color: "GRAY", priority: 1 },
+          { name: "Low", color: "GRAY", priority: 2 },
+        ],
+      },
+    });
   });
 });
 

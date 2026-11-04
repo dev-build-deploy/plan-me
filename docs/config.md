@@ -24,9 +24,9 @@ Everything except `repository` has a default; in the Action `repository` default
       "name": "Status",
       "options": { "open": "Todo", "in-progress": "In Progress", "needs-decision": "Needs decision", "blocked": "Blocked", "done": "Done" }
     },
-    "priority": { "name": "Priority", "options": ["P1", "P2", "P3"], "default": "P2" },
+    "priority": { "name": "Priority", "options": ["Urgent", "High", "Medium", "Low"], "default": "medium" },
     "role": { "name": "Role", "options": ["lead", "backend", "frontend", "design", "user"] },
-    "size": { "name": "Size", "options": ["XS", "S", "M", "L", "XL"] }
+    "effort": { "name": "Effort", "options": ["High", "Medium", "Low"] }
   },
   "types": ["Feature", "Bug", "Task", "Design", "Decision", "Epic"],
   "typeLabelPrefix": "type:",
@@ -49,9 +49,9 @@ Everything except `repository` has a default; in the Action `repository` default
 | `defaultComponent` | the first board | The component of issues without a component label. |
 | `componentLabelPrefix` | `component:` | The label naming an issue's component (`component:engine`). |
 | `fields.status` | see above | The Status field; `options` maps plan-me's five statuses to option names. The defaults reuse the built-in Todo/In Progress/Done so the board's own workflows keep working. |
-| `fields.priority` | P1, P2, P3; default P2 | Ordered: the first option is the most urgent. `default` is given to new items and by the Action to items without one. |
+| `fields.priority` | Urgent, High, Medium, Low; default `medium` | An [issue field](#issue-fields). Ordered: the first option is the most urgent. Its keys (what plan-me prints and `--priority` takes) are the option names lower-cased; an object (`{"p1": "Urgent"}`) chooses them. `default` is given to new items and by the Action to items without one. |
 | `fields.role` | free text | The role that does the item. With `options` a single select; without, a text field. |
-| `fields.size` | XS-XL | The size. |
+| `fields.effort` | High, Medium, Low | An [issue field](#issue-fields): the rough effort. Keys as for `fields.priority`. (`fields.size` is gone: a configuration with it is refused.) |
 | `types` | Feature, Bug, Task, Design, Decision, Epic | The item types. Each uses the organization's issue type of that name when it exists, else the label `type:<name>`. |
 | `epicType` | `Epic` | The type `next` skips and the snapshot marks `epic`. |
 | `labels` | `[]` | Extra labels `init` creates (strings or `{name, color, description}`). |
@@ -71,3 +71,15 @@ same paths, and the decision commands work without a `.plan-me.json`. See [decis
 
 The CLI uses `GITHUB_TOKEN`, then `GH_TOKEN`, then `gh auth token`. Projects v2 need the `project` scope (classic
 token) or the organization's "Projects" permission (fine-grained token or GitHub App), next to Issues read/write.
+
+## Issue fields
+
+Priority and Effort are the organization's issue fields when the repository belongs to an organization: single-select fields on the issue itself, shared by every repository
+of the organization, so one issue has one priority whichever board it is on. Their defaults are GitHub's default
+Priority and Effort fields. `init` creates the fields that are missing and adds missing options to the ones that
+exist (keeping the existing options, their order and colors); `init --dry-run` lists that first. Creating or changing
+an organization's issue fields needs an organization owner's token, so run `init` from the CLI; the Action's
+`GITHUB_TOKEN` can't.
+
+A repository owned by a user has no issue fields: there Priority and Effort are board fields like Status and Role,
+and `init` creates them on every board. plan-me reads either: a value in the issue field comes first, else the board.

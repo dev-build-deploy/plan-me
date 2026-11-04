@@ -34,7 +34,7 @@ const SECTIONS = (type: string, id: string): string =>
     .join("\n\n");
 
 const ITEM = (id: string, extra: string, type = /type: (\w+)/.exec(extra)?.[1] ?? "task"): string =>
-  `---\nid: ${id}\ntitle: "Title ${id}"\npriority: P1\n${extra}\n---\n\n# Title ${id}\n\n${SECTIONS(type, id)}\n`;
+  `---\nid: ${id}\ntitle: "Title ${id}"\npriority: high\n${extra}\n---\n\n# Title ${id}\n\n${SECTIONS(type, id)}\n`;
 
 /** The issue check without Vale: the structure rules only (the prose rules have their own tests). */
 const NO_VALE = { root: os.tmpdir(), vale: false };
@@ -67,55 +67,57 @@ describe("adapters", () => {
       design: ["docs/design/x.md"],
     });
     expect(records[0].body).toMatch(/^### Why\n\nWhy of child\.\n\n### Context/);
-    expect(records[0].body).toMatch(/What of child\.\n\nDecisions this item carries \(numbered, in the decisions index\): 16, 17$/);
-    expect(records[1]).toMatchObject({ type: "Epic", component: "engine", priority: "P1" });
+    expect(records[0].body).toMatch(
+      /What of child\.\n\nDecisions this item carries \(numbered, in the decisions index\): 16, 17$/
+    );
+    expect(records[1]).toMatchObject({ type: "Epic", component: "engine", priority: "high" });
   });
 
   test("line list", () => {
     const dir = tmp({
       "backlog.md": [
         "# Backlog",
-        "## P1",
+        "## High",
         "- ~~old-thing~~ done (2026-10-23): it shipped.",
         "- **long-notes** · A long note can hide the toolbar (point 3): include the notes. Helper:",
         "  backend.",
         "- **lab** · In progress (branch x-lab). The toolbar prototype. Helper: frontend.",
-        "## P2",
+        "## medium",
         "- **later** · Something later. Helper: user.",
       ].join("\n"),
     });
     const records = readLineList(CONFIG, path.join(dir, "backlog.md"));
     expect(records.map(r => [r.id, r.status, r.priority, r.role, r.title])).toEqual([
-      ["old-thing", "done", "P1", undefined, "it shipped"],
-      ["long-notes", "open", "P1", "backend", "A long note can hide the toolbar (point 3)"],
-      ["lab", "in-progress", "P1", "frontend", "The toolbar prototype"],
-      ["later", "open", "P2", "user", "Something later"],
+      ["old-thing", "done", "high", undefined, "it shipped"],
+      ["long-notes", "open", "high", "backend", "A long note can hide the toolbar (point 3)"],
+      ["lab", "in-progress", "high", "frontend", "The toolbar prototype"],
+      ["later", "open", "medium", "user", "Something later"],
     ]);
   });
 
   test("line list: a Done section", () => {
     const dir = tmp({
       "backlog.md": [
-        "## P3",
+        "## Low",
         "- **dark-mode** · A dark theme for the settings page.",
         "## Done",
         "- **login-timeout** · Sessions expired after 5 minutes.",
-        "## P1",
+        "## High",
         "- **export-csv** · Export the report as CSV.",
       ].join("\n"),
     });
     const records = readLineList(CONFIG, path.join(dir, "backlog.md"));
     expect(records.map(r => [r.id, r.status, r.priority])).toEqual([
-      ["dark-mode", "open", "P3"],
-      ["login-timeout", "done", "P3"],
-      ["export-csv", "open", "P1"],
+      ["dark-mode", "open", "low"],
+      ["login-timeout", "done", "low"],
+      ["export-csv", "open", "high"],
     ]);
   });
 
   test("line list: meta after the id", () => {
     const dir = tmp({
       "backlog.md": [
-        "## P2",
+        "## medium",
         "- **export-csv** (2026-10-01, branch feat/export) · Export the report as CSV.",
         "- **login-timeout** (2026-10-02, branch fix/login (also the API)) · Sessions expire too soon.",
         "- **search-filters** + **search-sort** (2026-10-03, branch feat/search) · Filters and sorting on search.",
@@ -139,19 +141,19 @@ describe("adapters", () => {
   test("line list: an item's own priority", () => {
     const dir = tmp({
       "backlog.md": [
-        "## P1",
-        "- **dark-mode** · P3 · A dark theme for the settings page.",
-        "- **login-timeout** · P2 (found by a test bot): Sessions expire too soon.",
-        "- **export-csv** (2026-10-01) · P3: Export the report as CSV.",
+        "## High",
+        "- **dark-mode** · low · A dark theme for the settings page.",
+        "- **login-timeout** · medium (found by a test bot): Sessions expire too soon.",
+        "- **export-csv** (2026-10-01) · low: Export the report as CSV.",
         "- **pricing-tiers** · Pricing in tiers.",
       ].join("\n"),
     });
     const records = readLineList(CONFIG, path.join(dir, "backlog.md"));
     expect(records.map(r => [r.id, r.priority, r.title])).toEqual([
-      ["dark-mode", "P3", "A dark theme for the settings page"],
-      ["login-timeout", "P2", "Sessions expire too soon"],
-      ["export-csv", "P3", "Export the report as CSV"],
-      ["pricing-tiers", "P1", "Pricing in tiers"],
+      ["dark-mode", "low", "A dark theme for the settings page"],
+      ["login-timeout", "medium", "Sessions expire too soon"],
+      ["export-csv", "low", "Export the report as CSV"],
+      ["pricing-tiers", "high", "Pricing in tiers"],
     ]);
     expect(records[1].body).toContain("(found by a test bot)");
   });
@@ -159,7 +161,7 @@ describe("adapters", () => {
   test("line list: status phrases", () => {
     const dir = tmp({
       "backlog.md": [
-        "## P1",
+        "## High",
         "- **pricing-tiers** · Needs a decision. Two tiers or three? Helper: designer.",
         "- **pricing-page** · Needs decision: Which plan is the default.",
         "- **export-pdf** · Blocked. The PDF library is not chosen.",
@@ -182,7 +184,7 @@ describe("adapters", () => {
   test("line list: dependencies", () => {
     const dir = tmp({
       "backlog.md": [
-        "## P1",
+        "## High",
         "- **export-csv** · Export the report as CSV.",
         "- **pricing-page** · The plans side by side.",
         "- **export-pdf** · After export-csv: the same report as PDF.",
@@ -211,7 +213,7 @@ describe("adapters", () => {
   test("line list: After anywhere", () => {
     const dir = tmp({
       "backlog.md": [
-        "## P1",
+        "## High",
         "- **export-csv** · Export the report as CSV.",
         "- **export-pdf** · The report as PDF, the most used first. After export-csv. Helper: backend.",
         "- **export-xls** · After export-csv (if the owner keeps it): the report as a spreadsheet.",
@@ -240,7 +242,7 @@ describe("runImport", () => {
     const { backlog } = setup();
     const dir = tmp({
       "backlog.md": [
-        "## P1",
+        "## High",
         "- **export-csv** · Export the report as CSV.",
         "- **export-pdf** · After export-csv, export-html: the same report as PDF.",
       ].join("\n"),
@@ -312,7 +314,7 @@ describe("the issue check on import", () => {
         "refuse bad: 1 error(s)",
         expect.stringMatching(/^ {2}line 1: error: \[PI004\] The body has no sections/),
         "refuse untyped: 1 error(s)",
-        "create good [P1 open] Title good",
+        "create good [high open] Title good",
       ])
     );
     const lines = await runImport(backlog, records, { check: NO_VALE });
@@ -345,7 +347,7 @@ describe("the issue check on import", () => {
     expect(api.issues.get(raw.number)?.title).toBe("notes");
 
     const lines = await runImport(backlog, records, { update: true, check: NO_VALE });
-    expect(lines[0]).toMatch(new RegExp(`^updated #${raw.number} a: title; body; type; priority - -> P1`));
+    expect(lines[0]).toMatch(new RegExp(`^updated #${raw.number} a: title; body; type; priority - -> high`));
     const after = api.issues.get(raw.number);
     expect(after).toMatchObject({ title: "Title a", issueType: "Bug" });
     expect(after?.body).toContain("### Steps to reproduce\n\nSteps to reproduce of a.");
