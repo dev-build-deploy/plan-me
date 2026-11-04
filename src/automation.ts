@@ -168,9 +168,9 @@ function optionKey(field: SelectField, answer: string | undefined): string | und
 }
 
 /**
- * An issue was opened from one of plan-me's issue forms: its answers become the board fields and labels. The
- * Component answer adds the component label (unless the issue already has one); Priority, Role and Size (the
- * configured field names) set the board fields; a Decision opens as needs-decision. An issue without form answers
+ * An issue was opened from one of plan-me's issue forms: its answers become the fields and labels. The
+ * Component answer adds the component label (unless the issue already has one); Priority, Role and Effort (the
+ * configured field names) set the fields (Priority and Effort as issue fields where the organization has them); a Decision opens as needs-decision. An issue without form answers
  * (opened by `new`, or a blank issue) is left to the sweep. Returns one line per change.
  */
 export async function onIssueOpened(backlog: Backlog, number: number): Promise<string[]> {
@@ -178,7 +178,7 @@ export async function onIssueOpened(backlog: Backlog, number: number): Promise<s
   const item = await backlog.show(number);
   const answers = parseFormAnswers(item.body);
   const f = config.fields;
-  const headings = [COMPONENT_HEADING, f.priority.name, f.role.name, f.size.name];
+  const headings = [COMPONENT_HEADING, f.priority.name, f.role.name, f.effort.name];
   if (!headings.some(h => h in answers)) return [];
   const lines: string[] = [];
   let component = item.component;
@@ -193,7 +193,7 @@ export async function onIssueOpened(backlog: Backlog, number: number): Promise<s
   const values: Omit<FieldValues, "status"> = {
     priority: optionKey(f.priority, answers[f.priority.name]),
     role: optionKey(f.role, answers[f.role.name]),
-    size: optionKey(f.size, answers[f.size.name]),
+    effort: optionKey(f.effort, answers[f.effort.name]),
   };
   const outcome = await backlog.update(number, values);
   if (outcome.changed) lines.push(`#${number} ${outcome.actions.join("; ")}`);

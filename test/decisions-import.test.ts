@@ -38,9 +38,14 @@ describe("numbered lists (docs/decisions.md)", () => {
     expect(list).toHaveLength(28);
     expect(list[0]).toMatchObject({ number: "1", date: "2026-10-10", title: "Notes sync only over the account" });
     expect(list[0].by).toBeUndefined();
-    expect(list[0].text).toMatch(/^\*\*Notes sync only over the account:\*\* no peer-to-peer sync between devices; the/);
+    expect(list[0].text).toMatch(
+      /^\*\*Notes sync only over the account:\*\* no peer-to-peer sync between devices; the/
+    );
     expect(list[0].text).toContain("\nhistory) goes through the account's server in the sync service.");
-    expect(list.find(e => e.number === "4")).toMatchObject({ title: "The editor stops at the page edge", date: "2026-10-10" });
+    expect(list.find(e => e.number === "4")).toMatchObject({
+      title: "The editor stops at the page edge",
+      date: "2026-10-10",
+    });
     expect(list.find(e => e.number === "45")).toMatchObject({
       date: "2026-10-12",
       title: "Avatars: a quick fix on step 1",
@@ -128,9 +133,7 @@ describe("import", () => {
     expect(index).toContain(
       "- longer-trials-b · 79 · 2026-10-11 · amended by trial-and-grace-lengths-in-data · - · Longer trials (B)\n"
     );
-    expect(index).toContain(
-      "- a-poc-of-the-board · L112 · 2026-10-28 · amended by columns-are-twice-as-wide · web · "
-    );
+    expect(index).toContain("- a-poc-of-the-board · L112 · 2026-10-28 · amended by columns-are-twice-as-wide · web · ");
     expect(index.indexOf("## Superseded")).toBeLessThan(index.indexOf("- a-standalone-web-app · L2 "));
 
     const rerun = importDecisions(root, "apps/web/docs/decisions.md", "labelled", { scope: ["web"] });

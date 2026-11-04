@@ -47,10 +47,10 @@ set by `new --id` and `import`).
 
 | Command | What it does |
 | --- | --- |
-| `init [--dry-run]` | Creates the missing boards (one per component, linked to the repository), fields, options and labels, enables the Claude Code plugin (`claude install`) and writes the issue forms (`templates`). Existing options are kept. Prints one line per action, or `up to date`. |
+| `init [--dry-run]` | Creates the missing labels, the organization's missing Priority and Effort [issue fields](./config.md#issue-fields) and options, and the missing boards (one per component, linked to the repository), board fields and options, enables the Claude Code plugin (`claude install`) and writes the issue forms (`templates`). Existing options are kept. Prints one line per action, or `up to date`. |
 | `templates [--force] [--dry-run]` | Writes the issue forms: `.github/ISSUE_TEMPLATE/<type>.yml` per configured type and `config.yml` (see below). Unchanged files are left alone (`up to date`); a form edited by hand is left alone unless `--force`; a generated form for a type no longer configured is removed. |
 | `templates check` | One line per problem and exit code 1: a generated form missing, stale or for a type no longer configured. Forms edited by hand pass; a repository without plan-me's forms passes. |
-| `new <title> --type T (--body t \| --body-file f) [--priority P] [--component c] [--role r] [--size s] [--parent ref] [--blocked-by ref]... [--design path]... [--id id]` | Creates an item: labels, issue type, board fields, sub-issue of its epic, dependencies (status blocked while a blocker is open), design doc links (in the type's Design docs section when it has one). The body must pass the [issue check](#the-issue-check): a body without the type's sections is refused and nothing is created; prose warnings are printed on stderr. `--body-file -` reads stdin. With `--id` it is idempotent. |
+| `new <title> --type T (--body t \| --body-file f) [--priority P] [--component c] [--role r] [--effort e] [--parent ref] [--blocked-by ref]... [--design path]... [--id id]` | Creates an item: labels, issue type, fields (issue fields and board), sub-issue of its epic, dependencies (status blocked while a blocker is open), design doc links (in the type's Design docs section when it has one). The body must pass the [issue check](#the-issue-check): a body without the type's sections is refused and nothing is created; prose warnings are printed on stderr. `--body-file -` reads stdin. With `--id` it is idempotent. |
 | `check-issue [file] [--stdin] [--type T] [--title t] [--format text\|json\|hook] [--skeleton]` | Runs the [issue check](#the-issue-check) on a body (a file or stdin): one line per finding, a summary, exit code 1 on errors. `--skeleton --type T` prints the type's sections as an empty body to fill in. Needs no token; without a configuration file the default types apply. |
 | `start <ref> [--branch b]` | Status in-progress; the branch as a `Branch: b` line in the body. |
 | `block <ref> --by <ref>` | A "blocked by" dependency; status blocked while the blocker is open. |
@@ -62,7 +62,7 @@ set by `new --id` and `import`).
 | `decisions merge-driver <base> <ours> <theirs>` | Git's merge driver (git runs it): merges the decisions both indexes list and writes the index again. |
 | `decisions import <file> --format numbered\|labelled [--by b] [--scope a]... [--dry-run]` | Converts an old numbered list into decision files, keeping the numbers; rerunnable. |
 | `done <ref> [--note t]` | A **Done.** comment with the note, closed (completed), status done. |
-| `next [filters] [--limit n]` | The next item(s): open, unblocked, not an epic; P1 before P2 before P3; within a priority in-progress, then needs-decision, then open; then by number. |
+| `next [filters] [--limit n]` | The next item(s): open, unblocked, not an epic; by priority (urgent, high, medium, low); within a priority in-progress, then needs-decision, then open; then by number. |
 | `list [filters] [--state open\|closed\|all]` | The matching items in the same order. |
 | `show <ref>` | One item: its line, URL and body. |
 | `snapshot [--out file]` | The open backlog, one line per item, per component, epics with their children indented. |
@@ -78,10 +78,10 @@ Mutating commands print what changed and the item afterwards:
 ```sh
 $ plan-me start 12 --branch feat/12-lab
 #12 branch feat/12-lab; status open -> in-progress
-#12 [web P1 in-progress frontend] Editor toolbar prototype
+#12 [web high in-progress frontend] Editor toolbar prototype
 $ plan-me start 12 --branch feat/12-lab
 #12 unchanged
-#12 [web P1 in-progress frontend] Editor toolbar prototype
+#12 [web high in-progress frontend] Editor toolbar prototype
 ```
 
 ## Issue templates
@@ -107,8 +107,8 @@ the form, and the [issue check](#the-issue-check) asks for the same ones, so an 
 reports them until `plan-me templates` writes them again.
 
 Every form then has a **Component** dropdown (the `boards`, default `defaultComponent`; only with more than one
-board) and the **Priority**, **Role** and **Size** fields (their configured names and options: dropdowns, or a text
-input for a role without options). The Action copies these answers to the labels and board fields when the issue is
+board) and the **Priority**, **Role** and **Effort** fields (their configured names and options: dropdowns, or a text
+input for a role without options). The Action copies these answers to the labels, issue fields and board fields when the issue is
 opened ([github-action.md](./github-action.md)).
 
 - **The type**: a form sets the organization's issue type (`type:`) when it has one of that name, else it adds the
@@ -196,7 +196,7 @@ $ plan-me import docs/backlog --dry-run
 refuse sync-retry: 2 error(s)
   line 1: error: [PI001] The issue has no type. Fix: ...
   line 1: error: [PI004] The body has no sections: it is free text. Fix: ...
-create export-md [web P2 open] Export a note as Markdown
+create export-md [web medium open] Export a note as Markdown
 warn export-md: line 7: warning: [PlanMe.ItemReferences] 'after export-csv' names another item without saying what it is ...
 ```
 
@@ -214,7 +214,7 @@ type: feature           # epic, feature, bug, design, decision -> that type; oth
 parent: epic-export       # the epic's id -> sub-issue
 title: "..."
 status: open            # open | in-progress | needs-decision | blocked | done
-priority: P1
+priority: high          # a priority key or option name (High)
 area: engine, story     # the first area naming a board is the component (else --component)
 owner: helper           # a line in the body; the role when agent is empty
 agent: feature-dev      # the role
@@ -226,11 +226,11 @@ depends_on: [other-id]  # blocked by
 The item file's markdown body (after a leading `# Title` line) is the issue body: write the type's sections as
 `## Why` or `### Why` headings (`##` headings that name a section of the type are written as `###`, like the forms).
 
-**(b) A line list** (`import backlog.md`): `## P1` headings set the priority; `- **id** · text. Helper: role.` starts
+**(b) A line list** (`import backlog.md`): `## High` headings (a priority's key or option name, any case) set the priority; `- **id** · text. Helper: role.` starts
 an item (indented lines continue it), its title is the first sentence. After the id may come joined ids
 (`**id** + **other-id**`: the first id is the item), a `(meta)` group (dates, branches; brackets may nest; it stays
-in the body, not the title) and a `·`, `-` or `:` separator. A leading priority option (`P3 · text`,
-`P3 (found by a test bot): text`) overrides the heading's priority and is left out of the title. A leading status phrase sets the status and is left out
+in the body, not the title) and a `·`, `-` or `:` separator. A leading priority option (`Low · text`,
+`Low (found by a test bot): text`) overrides the heading's priority and is left out of the title. A leading status phrase sets the status and is left out
 of the title (which comes from the next sentence): "In progress" -> in-progress, "Needs a decision" or "Needs
 decision" -> needs-decision, "Blocked" or "Blocked by <id>" -> blocked. `- ~~id~~ done ...` lines are done items, and
 so is every item under a `## Done` heading (up to the next `## P*`).

@@ -288,7 +288,7 @@ describe("decide (recording)", () => {
     const ctx = { backlog: () => backlog, root };
     const { item } = await backlog.create({ title: "Which store?" });
     const asked = await COMMANDS.ask.run(ctx, { ref: item.number, question: "Files or a database?" });
-    expect(asked.text).toBe(`#1 status open -> needs-decision; comment\n#1 [game P2 needs-decision] Which store?`);
+    expect(asked.text).toBe(`#1 status open -> needs-decision; comment\n#1 [game medium needs-decision] Which store?`);
     expect(asked.warning).toBeUndefined();
 
     const recorded = await COMMANDS.decide.run(ctx, { ...input, question: "#1" });
@@ -298,7 +298,7 @@ describe("decide (recording)", () => {
         "wrote docs/decisions.md",
         "- decisions-are-files · - · 2026-11-01 · current · - · Decisions are files",
         "#1 comment; decision docs/decisions/2026-11-01-decisions-are-files.md; status needs-decision -> in-progress",
-        "#1 [game P2 in-progress] Which store?",
+        "#1 [game medium in-progress] Which store?",
       ].join("\n")
     );
     expect(read(root, "docs/decisions/2026-11-01-decisions-are-files.md")).toContain('question: "#1"');
@@ -314,7 +314,7 @@ describe("decide (recording)", () => {
         "docs/decisions/2026-11-01-decisions-are-files.md unchanged",
         "- decisions-are-files · - · 2026-11-01 · current · - · Decisions are files",
         "#1 unchanged",
-        "#1 [game P2 in-progress] Which store?",
+        "#1 [game medium in-progress] Which store?",
       ].join("\n")
     );
     await expect(COMMANDS.decide.run(ctx, { title: "No text" })).rejects.toThrow(/needs text, title and by/);
@@ -326,14 +326,14 @@ describe("decide (recording)", () => {
     const ctx = { backlog: () => backlog, root: repo() };
     const first = await COMMANDS.ask.run(ctx, { ref: "Files or a database?", question: "Where do decisions live?" });
     expect(first.text).toBe(
-      "#1 created #1; status - -> open; priority - -> P2; status open -> needs-decision\n" +
-        "#1 [game P2 needs-decision] Files or a database?"
+      "#1 created #1; status - -> open; priority - -> medium; status open -> needs-decision\n" +
+        "#1 [game medium needs-decision] Files or a database?"
     );
     expect(api.issues.get(1)?.body).toContain("Where do decisions live?");
     expect(api.issues.get(1)?.labels).toContain("type:decision"); // the fake's organization has no Decision type
     expect(api.issues.get(1)?.body).toContain("<!-- plan-me:id=ask-files-or-a-database -->");
     const again = await COMMANDS.ask.run(ctx, { ref: "Files or a database?", question: "Where do decisions live?" });
-    expect(again.text).toBe("#1 unchanged\n#1 [game P2 needs-decision] Files or a database?");
+    expect(again.text).toBe("#1 unchanged\n#1 [game medium needs-decision] Files or a database?");
   });
 
   test("the old decide <ref> --question form still asks, with a deprecation warning naming ask", async () => {
@@ -341,7 +341,7 @@ describe("decide (recording)", () => {
     const ctx = { backlog: () => backlog, root: repo() };
     await backlog.create({ title: "Which store?" });
     const old = await COMMANDS.decide.run(ctx, { ref: 1, question: "Files or a database?" });
-    expect(old.text).toBe(`#1 status open -> needs-decision; comment\n#1 [game P2 needs-decision] Which store?`);
+    expect(old.text).toBe(`#1 status open -> needs-decision; comment\n#1 [game medium needs-decision] Which store?`);
     expect(old.warning).toMatch(/deprecated.*plan-me ask <ref> "<question>"/);
   });
 

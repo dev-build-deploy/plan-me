@@ -15,7 +15,10 @@ export interface BoardConfig {
   number?: number;
 }
 
-/** A single-select field: its name on the board and the key -> option name map (keys are what plan-me prints). */
+/**
+ * A single-select field: its name (on the board, or the organization's issue field) and the key -> option name map
+ * (keys are what plan-me prints; ordered, the first option is the most urgent or the largest).
+ */
 export interface SelectField {
   name: string;
   options: Record<string, string>;
@@ -66,8 +69,10 @@ export interface Config {
   componentLabelPrefix: string;
   fields: {
     status: SelectField;
+    /** An issue field where the organization has issue fields; a board field otherwise. */
     priority: SelectField;
-    size: SelectField;
+    /** An issue field where the organization has issue fields; a board field otherwise. */
+    effort: SelectField;
     /** Options empty: a free text field. */
     role: SelectField;
   };
@@ -92,9 +97,10 @@ const DEFAULT_STATUS_OPTIONS: Record<Status, string> = {
   blocked: "Blocked",
   done: "Done",
 };
-const DEFAULT_PRIORITIES = ["P1", "P2", "P3"];
-const DEFAULT_PRIORITY = "P2";
-const DEFAULT_SIZES = ["XS", "S", "M", "L", "XL"];
+/** GitHub's default Priority and Effort issue fields (key: the option name lower-cased). */
+const DEFAULT_PRIORITIES = ["Urgent", "High", "Medium", "Low"];
+const DEFAULT_PRIORITY = "medium";
+const DEFAULT_EFFORTS = ["High", "Medium", "Low"];
 const DEFAULT_TYPES = ["Feature", "Bug", "Task", "Design", "Decision", "Epic"];
 const DEFAULT_BRANCH_PATTERN = "(?:^|/)(\\d+)(?=[-_/]|$)";
 
@@ -105,7 +111,7 @@ type RawConfig = {
   boards?: Record<string, string | number | { title?: string; number?: number }>;
   defaultComponent?: string;
   componentLabelPrefix?: string;
-  fields?: { status?: RawSelect; priority?: RawSelect; size?: RawSelect; role?: RawSelect };
+  fields?: { status?: RawSelect; priority?: RawSelect; effort?: RawSelect; role?: RawSelect };
   types?: string[];
   typeLabelPrefix?: string;
   epicType?: string;
@@ -134,6 +140,24 @@ function toSelect(raw: RawSelect | undefined, name: string, fallback: string[], 
   return { name: raw?.name ?? name, options: toOptions(raw?.options, fallback), default: raw?.default ?? dflt };
 }
 
+/** A field whose keys are its option names lower-cased (`high` for `High`), as Priority and Effort. */
+function toKeyedSelect(raw: RawSelect | undefined, name: string, fallback: string[], dflt?: string): SelectField {
+  const field = toSelect(raw, name, [], dflt);
+  const given = raw?.options;
+  if (given === undefined || Array.isArray(given)) {
+    field.options = Object.fromEntries((given ?? fallback).map(o => [o.toLowerCase(), o]));
+  }
+  const dfltGiven = field.default;
+  if (dfltGiven !== undefined) {
+    const key = dfltGiven in field.options ? dfltGiven : dfltGiven.toLowerCase();
+    if (!(key in field.options)) {
+      throw new Error(`config: the default ${name.toLowerCase()} "${dfltGiven}" is not one of its options`);
+    }
+    field.default = key;
+  }
+  return field;
+}
+
 /**
  * Resolves a raw configuration object (as parsed from `.plan-me.json`) into a full Config with defaults.
  * @param raw The parsed JSON
@@ -156,6 +180,9 @@ export function resolveConfig(raw: RawConfig, repository?: string): Config {
   for (const key of Object.keys(status.options)) {
     if (!(STATUSES as readonly string[]).includes(key)) throw new Error(`config: unknown status "${key}"`);
   }
+  if ((raw.fields as Record<string, unknown> | undefined)?.size !== undefined) {
+    throw new Error(`config: "fields.size" is now "fields.effort" (the Effort issue field)`);
+  }
   const labels = (raw.labels ?? []).map(l => (typeof l === "string" ? { name: l } : l));
   return {
     repository: repo,
@@ -165,8 +192,8 @@ export function resolveConfig(raw: RawConfig, repository?: string): Config {
     componentLabelPrefix: raw.componentLabelPrefix ?? "component:",
     fields: {
       status,
-      priority: toSelect(raw.fields?.priority, "Priority", DEFAULT_PRIORITIES, DEFAULT_PRIORITY),
-      size: toSelect(raw.fields?.size, "Size", DEFAULT_SIZES),
+      priority: toKeyedSelect(raw.fields?.priority, "Priority", DEFAULT_PRIORITIES, DEFAULT_PRIORITY),
+      effort: toKeyedSelect(raw.fields?.effort, "Effort", DEFAULT_EFFORTS),
       role: toSelect(raw.fields?.role, "Role", []),
     },
     types: raw.types ?? DEFAULT_TYPES,
@@ -200,7 +227,7 @@ export function loadConfig(file: string = CONFIG_FILE, repository?: string): Con
   return resolveConfig(raw, repository);
 }
 
-/** The ordered priority keys (P1 first). */
+/** The ordered priority keys (the most urgent first). */
 export function priorityKeys(config: Config): string[] {
   return Object.keys(config.fields.priority.options);
 }

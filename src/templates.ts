@@ -15,7 +15,7 @@ import { yamlLicenseHeader } from "./license";
 export const TEMPLATE_DIR = ".github/ISSUE_TEMPLATE";
 /** The chooser's configuration file in TEMPLATE_DIR. */
 export const CHOOSER_FILE = "config.yml";
-/** The heading of the component dropdown (the board fields use their configured names: Priority, Role, Size). */
+/** The heading of the component dropdown (the fields use their configured names: Priority, Role, Effort). */
 export const COMPONENT_HEADING = "Component";
 
 /** One text section of an issue form: its heading in the issue body (`### <label>`) and the form's hints. */
@@ -238,7 +238,7 @@ function slug(label: string): string {
   return slugify(label.replace(/[^\w ]/g, " ")).replace(/-/g, "_");
 }
 
-/** The form elements for the board fields: Component (more than one board), Priority, Role, Size. */
+/** The form elements for the fields: Component (more than one board), Priority, Role, Effort. */
 function fieldElements(config: Config): Yaml[] {
   const out: Yaml[] = [];
   const components = Object.keys(config.boards);
@@ -269,7 +269,7 @@ function fieldElements(config: Config): Yaml[] {
   const roleHelp = "The role that does it.";
   if (Object.keys(f.role.options).length > 0) out.push(select("role", f.role, roleHelp));
   else out.push({ type: "input", id: "role", attributes: { label: f.role.name, description: roleHelp } });
-  out.push(select("size", f.size, "A rough size."));
+  out.push(select("effort", f.effort, "A rough effort."));
   return out;
 }
 

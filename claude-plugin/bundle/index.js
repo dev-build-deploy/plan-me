@@ -48392,7 +48392,7 @@ class Backlog {
         known.set(raw.number, raw);
         return (0, item_1.toItem)(this.config, raw, known);
     }
-    /** Maps plan-me values to board field names and option names; validates keys. */
+    /** Maps plan-me values to field names and option names; validates keys. */
     fieldValues(values) {
         const out = {};
         const put = (field, key, what) => {
@@ -48408,14 +48408,21 @@ class Backlog {
         put(f.status, values.status, "status");
         put(f.priority, values.priority, "priority");
         put(f.role, values.role, "role");
-        put(f.size, values.size, "size");
+        put(f.effort, values.effort, "effort");
         return out;
     }
-    /** Writes the values that differ from the current item; returns the action lines. */
+    /** Whether Priority and Effort are issue fields here (an organization's repository) rather than board fields. */
+    async usesIssueFields() {
+        return (await this.api.features()).issueFieldsSupported;
+    }
+    /**
+     * Writes the values that differ from the current item; returns the action lines. Priority and Effort go to the
+     * issue fields where the repository has them, the rest to the component's board.
+     */
     async write(raw, current, values) {
         const changed = {};
         const actions = [];
-        for (const key of ["status", "priority", "role", "size"]) {
+        for (const key of ["status", "priority", "role", "effort"]) {
             const value = values[key];
             if (value !== undefined && (current === undefined || current[key] !== value)) {
                 changed[key] = value;
@@ -48424,17 +48431,36 @@ class Backlog {
         }
         if (actions.length === 0)
             return [];
-        const board = this.config.boards[(0, item_1.componentOf)(this.config, raw)];
-        if (!board)
-            throw new Error(`no board for component "${(0, item_1.componentOf)(this.config, raw)}" in the config`);
-        await this.api.setFields(raw, board, this.fieldValues(changed));
+        const onIssue = {};
+        if (await this.usesIssueFields()) {
+            for (const key of ["priority", "effort"]) {
+                if (changed[key] === undefined)
+                    continue;
+                onIssue[key] = changed[key];
+                delete changed[key];
+            }
+        }
+        if (Object.keys(onIssue).length > 0)
+            await this.api.setIssueFields(raw, this.fieldValues(onIssue));
+        if (Object.keys(changed).length > 0) {
+            const board = this.config.boards[(0, item_1.componentOf)(this.config, raw)];
+            if (!board)
+                throw new Error(`no board for component "${(0, item_1.componentOf)(this.config, raw)}" in the config`);
+            await this.api.setFields(raw, board, this.fieldValues(changed));
+        }
         this.openCache = undefined;
         return actions;
     }
-    /** The board fields plan-me needs on every board. */
-    fieldSpecs() {
+    /** The board fields plan-me needs on every board (Priority and Effort only where there are no issue fields). */
+    async fieldSpecs() {
         const f = this.config.fields;
-        return [f.status, f.priority, f.role, f.size].map(s => ({ name: s.name, options: Object.values(s.options) }));
+        const fields = (await this.usesIssueFields()) ? [f.status, f.role] : [f.status, f.priority, f.role, f.effort];
+        return fields.map(toSpec);
+    }
+    /** The issue fields plan-me needs on the organization (none where the repository can't have issue fields). */
+    async issueFieldSpecs() {
+        const f = this.config.fields;
+        return (await this.usesIssueFields()) ? [f.priority, f.effort].map(toSpec) : [];
     }
     /** The labels plan-me needs: one per component, one per type the repository has no issue type for, the extras. */
     async labels() {
@@ -48448,11 +48474,18 @@ class Backlog {
             ...this.config.labels,
         ];
     }
-    /** `init`: creates the missing boards, fields, options and labels. Returns one line per action. */
+    /**
+     * `init`: creates the missing labels, the organization's missing issue fields and options (Priority, Effort), and
+     * the missing boards, board fields and options. Returns one line per action.
+     */
     async init(dryRun) {
         const actions = await this.api.ensureLabels(await this.labels(), dryRun);
+        const issueFields = await this.issueFieldSpecs();
+        if (issueFields.length > 0)
+            actions.push(...(await this.api.ensureIssueFields(issueFields, dryRun)));
+        const boardFields = await this.fieldSpecs();
         for (const board of Object.values(this.config.boards)) {
-            actions.push(...(await this.api.ensureBoard(board, this.fieldSpecs(), dryRun)));
+            actions.push(...(await this.api.ensureBoard(board, boardFields, dryRun)));
         }
         return actions;
     }
@@ -48479,7 +48512,7 @@ class Backlog {
         }
         const body = this.bodyFor(input);
         const priority = input.priority ?? this.config.fields.priority.default;
-        this.fieldValues({ priority, role: input.role, size: input.size }); // validate before creating
+        this.fieldValues({ priority, role: input.role, effort: input.effort }); // validate before creating
         const parent = input.parent ? await this.raw(input.parent) : undefined;
         const blockers = await Promise.all((input.blockedBy ?? []).map(async (b) => this.raw(b)));
         let raw = await this.api.createIssue({ title: input.title, body, labels, issueType });
@@ -48493,7 +48526,7 @@ class Backlog {
             actions.push(`blocked by #${blocker.number}`);
         }
         const status = blockers.some(b => b.open) ? "blocked" : "open";
-        actions.push(...(await this.write(raw, undefined, { status, priority, role: input.role, size: input.size })));
+        actions.push(...(await this.write(raw, undefined, { status, priority, role: input.role, effort: input.effort })));
         raw = (await this.api.getIssue(raw.number)) ?? raw;
         return { item: await this.item(raw), changed: true, actions };
     }
@@ -48532,7 +48565,7 @@ class Backlog {
         const after = (await this.api.getIssue(raw.number)) ?? raw;
         return { item: await this.item(after), changed: actions.length > 0, actions };
     }
-    /** Sets priority, role or size (status has its own commands); idempotent. */
+    /** Sets priority, role or effort (status has its own commands); idempotent. */
     async update(ref, values) {
         const raw = await this.raw(ref);
         const actions = await this.write(raw, await this.item(raw), values);
@@ -48653,7 +48686,7 @@ class Backlog {
         return items.sort((a, b) => (0, item_1.compareItems)(this.config, a, b));
     }
     /**
-     * `next`: the open, unblocked, non-epic items in pick-up order (P1 before P2 before P3; within a priority
+     * `next`: the open, unblocked, non-epic items in pick-up order (by priority, the most urgent first; within a priority
      * in-progress and needs-decision first, then by number).
      * @param limit How many to return (default 1)
      */
@@ -48674,6 +48707,10 @@ class Backlog {
     }
 }
 exports.Backlog = Backlog;
+/** A select field as a FieldSpec (its option names, in order). */
+function toSpec(field) {
+    return { name: field.name, options: Object.values(field.options) };
+}
 /** A new question's body: the Decision sections, the question under What (the question alone without a Decision type). */
 function askBody(type, question) {
     if (!type)
@@ -48918,7 +48955,7 @@ const filters = {
     component: zod_1.z.string().optional().describe("Only this component"),
     role: zod_1.z.string().optional().describe("Only this role"),
     status: zod_1.z.enum(config_1.STATUSES).optional().describe("Only this status"),
-    priority: zod_1.z.string().optional().describe("Only this priority (P1, P2, P3)"),
+    priority: zod_1.z.string().optional().describe("Only this priority (urgent, high, medium, low)"),
     type: zod_1.z.string().optional().describe("Only this type (Feature, Bug, Epic, ...)"),
     parent: zod_1.z.number().optional().describe("Only the children of this epic"),
 };
@@ -48942,7 +48979,7 @@ function define(spec) {
 /** The commands exposed as MCP tools (and used by the CLI). */
 exports.COMMANDS = {
     next: define({
-        description: "The next item to pick up: open and unblocked, P1 before P2 before P3; in-progress and needs-decision first",
+        description: "The next item to pick up: open and unblocked, the most urgent priority first; in-progress and needs-decision first",
         input: { ...filters, limit: zod_1.z.number().int().positive().optional().describe("How many (default 1)") },
         mutates: false,
         run: onBacklog(async (b, a) => itemsResult(b, await b.next(a, a.limit ?? 1))),
@@ -48982,7 +49019,7 @@ exports.COMMANDS = {
             priority: zod_1.z.string().optional(),
             component: zod_1.z.string().optional(),
             role: zod_1.z.string().optional(),
-            size: zod_1.z.string().optional(),
+            effort: zod_1.z.string().optional(),
             parent: ref.optional().describe("The parent epic"),
             blockedBy: zod_1.z.array(ref).optional(),
             design: zod_1.z.array(zod_1.z.string()).optional().describe("Design doc paths or URLs"),
@@ -49186,9 +49223,10 @@ const DEFAULT_STATUS_OPTIONS = {
     blocked: "Blocked",
     done: "Done",
 };
-const DEFAULT_PRIORITIES = ["P1", "P2", "P3"];
-const DEFAULT_PRIORITY = "P2";
-const DEFAULT_SIZES = ["XS", "S", "M", "L", "XL"];
+/** GitHub's default Priority and Effort issue fields (key: the option name lower-cased). */
+const DEFAULT_PRIORITIES = ["Urgent", "High", "Medium", "Low"];
+const DEFAULT_PRIORITY = "medium";
+const DEFAULT_EFFORTS = ["High", "Medium", "Low"];
 const DEFAULT_TYPES = ["Feature", "Bug", "Task", "Design", "Decision", "Epic"];
 const DEFAULT_BRANCH_PATTERN = "(?:^|/)(\\d+)(?=[-_/]|$)";
 /** The repository glossary the issue check reads when `issueCheck.glossaryFile` is not set (as pull-me does). */
@@ -49202,6 +49240,23 @@ function toOptions(raw, fallback) {
 }
 function toSelect(raw, name, fallback, dflt) {
     return { name: raw?.name ?? name, options: toOptions(raw?.options, fallback), default: raw?.default ?? dflt };
+}
+/** A field whose keys are its option names lower-cased (`high` for `High`), as Priority and Effort. */
+function toKeyedSelect(raw, name, fallback, dflt) {
+    const field = toSelect(raw, name, [], dflt);
+    const given = raw?.options;
+    if (given === undefined || Array.isArray(given)) {
+        field.options = Object.fromEntries((given ?? fallback).map(o => [o.toLowerCase(), o]));
+    }
+    const dfltGiven = field.default;
+    if (dfltGiven !== undefined) {
+        const key = dfltGiven in field.options ? dfltGiven : dfltGiven.toLowerCase();
+        if (!(key in field.options)) {
+            throw new Error(`config: the default ${name.toLowerCase()} "${dfltGiven}" is not one of its options`);
+        }
+        field.default = key;
+    }
+    return field;
 }
 /**
  * Resolves a raw configuration object (as parsed from `.plan-me.json`) into a full Config with defaults.
@@ -49230,6 +49285,9 @@ function resolveConfig(raw, repository) {
         if (!exports.STATUSES.includes(key))
             throw new Error(`config: unknown status "${key}"`);
     }
+    if (raw.fields?.size !== undefined) {
+        throw new Error(`config: "fields.size" is now "fields.effort" (the Effort issue field)`);
+    }
     const labels = (raw.labels ?? []).map(l => (typeof l === "string" ? { name: l } : l));
     return {
         repository: repo,
@@ -49239,8 +49297,8 @@ function resolveConfig(raw, repository) {
         componentLabelPrefix: raw.componentLabelPrefix ?? "component:",
         fields: {
             status,
-            priority: toSelect(raw.fields?.priority, "Priority", DEFAULT_PRIORITIES, DEFAULT_PRIORITY),
-            size: toSelect(raw.fields?.size, "Size", DEFAULT_SIZES),
+            priority: toKeyedSelect(raw.fields?.priority, "Priority", DEFAULT_PRIORITIES, DEFAULT_PRIORITY),
+            effort: toKeyedSelect(raw.fields?.effort, "Effort", DEFAULT_EFFORTS),
             role: toSelect(raw.fields?.role, "Role", []),
         },
         types: raw.types ?? DEFAULT_TYPES,
@@ -49272,7 +49330,7 @@ function loadConfig(file = exports.CONFIG_FILE, repository) {
     const raw = fs_1.default.existsSync(file) ? JSON.parse(fs_1.default.readFileSync(file, "utf8")) : {};
     return resolveConfig(raw, repository);
 }
-/** The ordered priority keys (P1 first). */
+/** The ordered priority keys (the most urgent first). */
 function priorityKeys(config) {
     return Object.keys(config.fields.priority.options);
 }
@@ -50234,10 +50292,10 @@ program
     .option("--body <text>", "The body (markdown): the type's sections as `### <section>` headings")
     .option("--body-file <file>", "Read the body from a file (`-`: stdin)")
     .option("--type <t>", "Feature, Bug, Task, Design, Decision, Epic")
-    .option("--priority <p>", "P1, P2, P3 (default from the config)")
+    .option("--priority <p>", "urgent, high, medium, low (default from the config)")
     .option("--component <c>", "The component (its board)")
     .option("--role <r>", "The role that does it")
-    .option("--size <s>", "The size")
+    .option("--effort <e>", "high, medium, low")
     .option("--parent <ref>", "The parent epic")
     .option("--blocked-by <ref>", "A blocker (repeatable)", collect)
     .option("--design <path>", "A design doc (repeatable)", collect)
@@ -50463,6 +50521,7 @@ const MAX_BOARDS_PER_ISSUE = 10;
 const MAX_FIELD_VALUES = 30;
 const MAX_PROJECTS = 100;
 const MAX_FIELDS = 50;
+const MAX_ISSUE_FIELDS = 50;
 const DEFAULT_LABEL_COLOR = "ededed";
 const DEFAULT_OPTION_COLOR = "GRAY";
 /** Body-line fallbacks used when the repository lacks native sub-issues or dependencies. */
@@ -50476,6 +50535,17 @@ const FIELD_VALUES = `projectItems(first: ${MAX_BOARDS_PER_ISSUE}) { nodes { pro
 const PROJECT_FIELDS = `id number title fields(first: ${MAX_FIELDS}) { nodes {
   ... on ProjectV2FieldCommon { id name dataType }
   ... on ProjectV2SingleSelectField { options { id name color description } } } }`;
+const ISSUE_FIELD_VALUES = `issueFieldValues(first: ${MAX_ISSUE_FIELDS}) { nodes {
+  ... on IssueFieldSingleSelectValue { name field { ... on IssueFieldCommon { name } } }
+  ... on IssueFieldTextValue { value field { ... on IssueFieldCommon { name } } } } }`;
+const ISSUE_FIELDS = `issueFields(first: ${MAX_ISSUE_FIELDS}) { nodes {
+  ... on IssueFieldCommon { name dataType } ... on IssueFieldSingleSelect { id options { id name color description } } } }`;
+/** The single-select issue fields from a GraphQL `issueFields` connection. */
+function toIssueFields(nodes) {
+    return (nodes ?? [])
+        .filter(n => n.dataType === "SINGLE_SELECT" && n.id && n.name)
+        .map(n => ({ id: n.id, name: n.name, options: n.options ?? [] }));
+}
 /** Builds the issue fragment for the detected features. */
 function issueFields(f) {
     const link = `(first: ${MAX_LINKS}) { nodes { number state } }`;
@@ -50485,6 +50555,7 @@ function issueFields(f) {
         f.issueTypes.length > 0 ? "issueType { name }" : "",
         f.subIssues ? `parent { number } subIssues${link}` : "",
         f.dependencies ? `blockedBy${link} blocking${link}` : "",
+        f.issueFieldsSupported ? ISSUE_FIELD_VALUES : "",
         FIELD_VALUES,
     ].join("\n");
 }
@@ -50511,6 +50582,13 @@ function toRawIssue(i, f) {
         }
         boards[item.project.title] = values;
     }
+    const issueFields = {};
+    for (const v of i.issueFieldValues?.nodes ?? []) {
+        const field = v.field?.name;
+        const value = (v.name ?? v.value);
+        if (field && value !== undefined && value !== null)
+            issueFields[field] = String(value);
+    }
     const fallback = parseBodyLinks(i.body ?? "");
     return {
         nodeId: i.id,
@@ -50526,6 +50604,7 @@ function toRawIssue(i, f) {
         blockedBy: f.dependencies ? toLinks(i.blockedBy?.nodes) : fallback.blockedBy.map(number => ({ number })),
         blocking: f.dependencies ? toLinks(i.blocking?.nodes) : [],
         boards,
+        issueFields,
     };
 }
 /**
@@ -50544,8 +50623,8 @@ function appendLine(body, line) {
     return body.trimEnd() + (body.trim() ? "\n\n" : "") + line + "\n";
 }
 /**
- * The Octokit implementation of PlanApi: REST for issues, comments and labels; GraphQL for Projects v2, sub-issues,
- * dependencies and issue types (all native when GitHub has them; body lines otherwise).
+ * The Octokit implementation of PlanApi: REST for issues, comments and labels; GraphQL for Projects v2, issue fields,
+ * sub-issues, dependencies and issue types (all native when GitHub has them; body lines or boards otherwise).
  */
 class GitHubApi {
     octokit;
@@ -50568,14 +50647,25 @@ class GitHubApi {
         if (this.featureCache)
             return this.featureCache;
         const data = await this.octokit.graphql(`query($owner: String!, $name: String!) { __type(name: "Issue") { fields { name } }
-        repository(owner: $owner, name: $name) { issueTypes(first: 50) { nodes { name } } } }`, { owner: this.owner, name: this.repo });
+        repo: __type(name: "Repository") { fields { name } }
+        repository(owner: $owner, name: $name) { owner { __typename } issueTypes(first: 50) { nodes { name } } } }`, { owner: this.owner, name: this.repo });
         const names = new Set(data.__type.fields.map(f => f.name));
+        const supported = names.has("issueFieldValues") &&
+            (data.repo?.fields ?? []).some(f => f.name === "issueFields") &&
+            data.repository.owner?.__typename === "Organization";
         this.featureCache = {
             subIssues: names.has("subIssues") && names.has("parent"),
             dependencies: names.has("blockedBy") && names.has("blocking"),
             issueTypes: (data.repository.issueTypes?.nodes ?? []).map(t => t.name),
+            issueFieldsSupported: supported,
+            issueFields: supported ? await this.loadIssueFields() : [],
         };
         return this.featureCache;
+    }
+    /** The repository's issue fields (its organization's). */
+    async loadIssueFields() {
+        const data = await this.octokit.graphql(`query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { ${ISSUE_FIELDS} } }`, { owner: this.owner, name: this.repo });
+        return toIssueFields(data.repository.issueFields?.nodes);
     }
     async listIssues(includeClosed) {
         const f = await this.features();
@@ -50626,6 +50716,7 @@ class GitHubApi {
             blockedBy: [],
             blocking: [],
             boards: {},
+            issueFields: {},
         };
     }
     async updateBody(number, body) {
@@ -50765,6 +50856,66 @@ class GitHubApi {
           updateProjectV2ItemFieldValue(input: { projectId: $projectId, itemId: $itemId, fieldId: $fieldId,
             value: $value }) { projectV2Item { id } } }`, { projectId: project.id, itemId: added.addProjectV2ItemById.item.id, fieldId: field.id, value: fieldValue });
         }
+    }
+    async setIssueFields(issue, values) {
+        const { issueFields } = await this.features();
+        const inputs = Object.entries(values).map(([name, value]) => {
+            const field = issueFields.find(f => f.name === name);
+            if (!field)
+                throw new Error(`the organization has no issue field "${name}": run plan-me init`);
+            const option = field.options.find(o => o.name === value);
+            if (!option)
+                throw new Error(`issue field "${name}" has no option "${value}": run plan-me init`);
+            return { fieldId: field.id, singleSelectOptionId: option.id };
+        });
+        if (inputs.length === 0)
+            return;
+        await this.octokit.graphql(`mutation($issueId: ID!, $issueFields: [IssueFieldCreateOrUpdateInput!]!) {
+        setIssueFieldValue(input: { issueId: $issueId, issueFields: $issueFields }) { issue { number } } }`, { issueId: issue.nodeId, issueFields: inputs });
+    }
+    async ensureIssueFields(fields, dryRun) {
+        const { issueFields, issueFieldsSupported } = await this.features();
+        if (!issueFieldsSupported)
+            return [];
+        const actions = [];
+        const where = `on organization "${this.owner}"`;
+        for (const spec of fields) {
+            const field = issueFields.find(f => f.name === spec.name);
+            if (!field) {
+                actions.push(`create issue field "${spec.name}" ${where}`);
+                if (dryRun)
+                    continue;
+                const { organization } = await this.octokit.graphql(`query($login: String!) { organization(login: $login) { id } }`, { login: this.owner });
+                await this.octokit.graphql(`mutation($input: CreateIssueFieldInput!) { createIssueField(input: $input) { clientMutationId } }`, {
+                    input: {
+                        ownerId: organization.id,
+                        name: spec.name,
+                        dataType: "SINGLE_SELECT",
+                        visibility: "ALL",
+                        options: spec.options.map((name, i) => ({ name, color: DEFAULT_OPTION_COLOR, priority: i + 1 })),
+                    },
+                });
+                continue;
+            }
+            const missing = spec.options.filter(o => !field.options.some(h => h.name === o));
+            if (missing.length === 0)
+                continue;
+            actions.push(`add options ${missing.join(", ")} to issue field "${spec.name}" ${where}`);
+            if (dryRun)
+                continue;
+            const options = [
+                ...field.options.map(o => ({
+                    name: o.name,
+                    color: o.color ?? DEFAULT_OPTION_COLOR,
+                    description: o.description,
+                })),
+                ...missing.map(name => ({ name, color: DEFAULT_OPTION_COLOR, description: "" })),
+            ].map((o, i) => ({ ...o, description: o.description ?? "", priority: i + 1 }));
+            await this.octokit.graphql(`mutation($input: UpdateIssueFieldInput!) { updateIssueField(input: $input) { clientMutationId } }`, { input: { id: field.id, options } });
+        }
+        if (!dryRun && actions.length > 0)
+            this.featureCache = undefined;
+        return actions;
     }
     async ensureLabels(labels, dryRun) {
         const existing = new Set();
@@ -51025,7 +51176,7 @@ function readItemFolder(config, dir, options = {}) {
             body,
             type,
             status: status && config_1.STATUSES.includes(status) ? status : "open",
-            priority: asString(data.priority),
+            priority: toPriority(config, asString(data.priority)),
             component: mapComponent(config, asList(data.area), options.component),
             role: asString(data.agent) ?? asString(data.owner),
             parent: asString(data.parent),
@@ -51123,20 +51274,30 @@ function skipMeta(text) {
 function skipLead(text) {
     return skipMeta(text.trim()).trim().replace(SEPARATOR, "").trim();
 }
-/** An item's own priority: a leading priority option (`P3 · text`, `P3 (meta): text`), and the text after it. */
-function leadingPriority(text, priorities) {
+/** The priority key a word names (the key or the option name, any case), if any. */
+function priorityKey(config, word) {
+    const w = word.toLowerCase();
+    return Object.entries(config.fields.priority.options).find(([k, n]) => k.toLowerCase() === w || n.toLowerCase() === w)?.[0];
+}
+/** A priority as written (a key or an option name, any case) as its key; unknown text is kept (and refused later). */
+function toPriority(config, text) {
+    return text === undefined ? undefined : (priorityKey(config, text) ?? text);
+}
+/** An item's own priority: a leading priority option (`Low · text`, `Low (meta): text`), and the text after it. */
+function leadingPriority(config, text) {
     const m = /^([\w-]+)(?=[\s(·:.–—-]|$)/.exec(text);
-    if (!m || !priorities.includes(m[1]))
+    const priority = m ? priorityKey(config, m[1]) : undefined;
+    if (!m || !priority)
         return { rest: text };
-    return { priority: m[1], rest: skipLead(text.slice(m[0].length)) };
+    return { priority, rest: skipLead(text.slice(m[0].length)) };
 }
 /**
- * The record for a line-list item; `known` are the ids defined in the same file, `priorities` the configured
- * priority options (a leading one overrides the section's priority).
+ * The record for a line-list item; `known` are the ids defined in the same file (a leading priority option overrides
+ * the section's priority).
  */
-function lineRecord(item, known, priorities, file, options) {
+function lineRecord(config, item, known, file, options) {
     const body = item.text.join(" ").replace(/\s+/g, " ").trim().replace(SEPARATOR, "");
-    const own = leadingPriority(skipLead(body.replace(JOINED_IDS, "").replace(/^done\b/i, "")), priorities);
+    const own = leadingPriority(config, skipLead(body.replace(JOINED_IDS, "").replace(/^done\b/i, "")));
     const text = own.rest;
     const { status, rest } = leadingStatus(text);
     const after = afterClause(rest, known);
@@ -51160,7 +51321,7 @@ function lineRecord(item, known, priorities, file, options) {
     };
 }
 /**
- * Adapter (b): a markdown line list. `## P1` headings set the priority (a leading `P3 ·` in an item's text overrides
+ * Adapter (b): a markdown line list. `## High` headings set the priority (a leading `Low ·` in an item's text overrides
  * it, left out of the title); a `## Done` heading marks the items under it
  * done (until the next priority heading); `- **id** · text. Helper: role.` starts an item (indented lines continue
  * it). After the id may come joined ids (`+ **other-id**`, the first id is the item), a balanced `(meta)` group
@@ -51171,7 +51332,6 @@ function lineRecord(item, known, priorities, file, options) {
  */
 function readLineList(config, file, options = {}) {
     const items = [];
-    const priorities = Object.keys(config.fields.priority.options);
     let priority;
     let doneSection = false;
     let current;
@@ -51179,8 +51339,9 @@ function readLineList(config, file, options = {}) {
         const heading = /^##\s+(\S+)/.exec(line);
         if (heading) {
             current = undefined;
-            if (priorities.includes(heading[1])) {
-                priority = heading[1];
+            const key = priorityKey(config, heading[1]);
+            if (key) {
+                priority = key;
                 doneSection = false;
             }
             else if (/^done\b/i.test(heading[1])) {
@@ -51203,7 +51364,7 @@ function readLineList(config, file, options = {}) {
         }
     }
     const known = new Set(items.map(i => i.id));
-    return items.map(item => lineRecord(item, known, priorities, file, options));
+    return items.map(item => lineRecord(config, item, known, file, options));
 }
 /** The `new` input for a record. */
 function newItemOf(r) {
@@ -51695,9 +51856,9 @@ function toItem(config, raw, known, unknownIsClosed = false) {
         url: raw.url,
         open: raw.open,
         status: raw.open ? (fieldStatus ?? "open") : "done",
-        priority: reverse(f.priority, values[f.priority.name]),
+        priority: reverse(f.priority, raw.issueFields[f.priority.name] ?? values[f.priority.name]),
         role: reverse(f.role, values[f.role.name]),
-        size: reverse(f.size, values[f.size.name]),
+        effort: reverse(f.effort, raw.issueFields[f.effort.name] ?? values[f.effort.name]),
         component: componentOf(config, raw),
         type: typeOf(config, raw),
         parent: raw.parent,
@@ -51729,7 +51890,7 @@ function toItems(config, raws, includesClosed) {
     }
     return items;
 }
-/** Sort rank of an item's priority (P1 first, none last). */
+/** Sort rank of an item's priority (the most urgent first, none last). */
 function priorityRank(config, item) {
     const keys = (0, config_1.priorityKeys)(config);
     const i = item.priority ? keys.indexOf(item.priority) : -1;
@@ -51745,7 +51906,7 @@ function compareItems(config, a, b) {
 function isEpic(config, item) {
     return item.type?.toLowerCase() === config.epicType.toLowerCase();
 }
-/** One line for an item: `#12 [web P1 in-progress frontend] title — blocked by #9`. */
+/** One line for an item: `#12 [web high in-progress frontend] title — blocked by #9`. */
 function formatItem(config, item) {
     const tags = [item.component, item.priority, item.status, item.role, isEpic(config, item) ? "epic" : undefined];
     const blocked = item.blockedBy.length > 0 ? ` — blocked by ${item.blockedBy.map(n => `#${n}`).join(", ")}` : "";
@@ -51973,7 +52134,7 @@ const license_1 = __nccwpck_require__(19764);
 exports.TEMPLATE_DIR = ".github/ISSUE_TEMPLATE";
 /** The chooser's configuration file in TEMPLATE_DIR. */
 exports.CHOOSER_FILE = "config.yml";
-/** The heading of the component dropdown (the board fields use their configured names: Priority, Role, Size). */
+/** The heading of the component dropdown (the fields use their configured names: Priority, Role, Effort). */
 exports.COMPONENT_HEADING = "Component";
 /** The heading of the design docs section (`new --design` fills it). */
 exports.DESIGN_DOCS_HEADING = "Design docs";
@@ -52146,7 +52307,7 @@ function withHeader(body, license) {
 function slug(label) {
     return (0, decisions_1.slugify)(label.replace(/[^\w ]/g, " ")).replace(/-/g, "_");
 }
-/** The form elements for the board fields: Component (more than one board), Priority, Role, Size. */
+/** The form elements for the fields: Component (more than one board), Priority, Role, Effort. */
 function fieldElements(config) {
     const out = [];
     const components = Object.keys(config.boards);
@@ -52179,7 +52340,7 @@ function fieldElements(config) {
         out.push(select("role", f.role, roleHelp));
     else
         out.push({ type: "input", id: "role", attributes: { label: f.role.name, description: roleHelp } });
-    out.push(select("size", f.size, "A rough size."));
+    out.push(select("effort", f.effort, "A rough effort."));
     return out;
 }
 function sectionElement(s) {

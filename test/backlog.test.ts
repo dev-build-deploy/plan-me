@@ -12,8 +12,9 @@ describe("config", () => {
   test("defaults", () => {
     expect(CONFIG.owner).toBe("o");
     expect(CONFIG.fields.status.options["in-progress"]).toBe("In Progress");
-    expect(CONFIG.fields.priority.default).toBe("P2");
-    expect(Object.keys(CONFIG.fields.size.options)).toEqual(["XS", "S", "M", "L", "XL"]);
+    expect(CONFIG.fields.priority.default).toBe("medium");
+    expect(Object.keys(CONFIG.fields.priority.options)).toEqual(["urgent", "high", "medium", "low"]);
+    expect(CONFIG.fields.effort).toEqual({ name: "Effort", options: { high: "High", medium: "Medium", low: "Low" } });
     expect(CONFIG.boards.engine).toEqual({ title: "Engine", number: undefined });
   });
 
@@ -22,6 +23,17 @@ describe("config", () => {
     expect(() => resolveConfig({ repository: "o/r", fields: { status: { options: { nope: "x" } } } })).toThrow(
       /unknown status/
     );
+    expect(() => resolveConfig({ repository: "o/r", fields: { size: {} } } as never)).toThrow(/fields\.effort/);
+    expect(() => resolveConfig({ repository: "o/r", fields: { priority: { default: "P2" } } })).toThrow(
+      /default priority "P2"/
+    );
+  });
+
+  test("Priority and Effort keys are their option names lower-cased; the default matches in any case", () => {
+    const c = resolveConfig({ repository: "o/r", fields: { priority: { options: ["P1", "P2"], default: "P2" } } });
+    expect(c.fields.priority).toEqual({ name: "Priority", options: { p1: "P1", p2: "P2" }, default: "p2" });
+    const mapped = resolveConfig({ repository: "o/r", fields: { effort: { options: { s: "Small", l: "Large" } } } });
+    expect(mapped.fields.effort.options).toEqual({ s: "Small", l: "Large" });
   });
 });
 
@@ -35,13 +47,13 @@ describe("new", () => {
     const { item } = await backlog.create({
       title: "Child",
       component: "engine",
-      priority: "P1",
+      priority: "high",
       role: "helper",
       parent: `#${epic.item.number}`,
       blockedBy: [String(blocker.item.number)],
       design: ["docs/design/x.md"],
     });
-    expect(item).toMatchObject({ parent: epic.item.number, status: "blocked", priority: "P1", role: "helper" });
+    expect(item).toMatchObject({ parent: epic.item.number, status: "blocked", priority: "high", role: "helper" });
     expect(item.blockedBy).toEqual([blocker.item.number]);
     expect(api.issues.get(item.number)?.body).toContain("(https://github.com/o/r/blob/HEAD/docs/design/x.md)");
   });
@@ -108,15 +120,15 @@ describe("next, list and snapshot", () => {
   async function fill(): Promise<ReturnType<typeof setup>> {
     const s = setup();
     const b = s.backlog;
-    const epic = await b.create({ title: "Epic", type: "Epic", priority: "P1" }); // #1
-    await b.create({ title: "Open P1", priority: "P1", parent: "1", role: "helper" }); // #2
-    const ip = await b.create({ title: "In progress P1", priority: "P1", parent: "1" }); // #3
+    const epic = await b.create({ title: "Epic", type: "Epic", priority: "high" }); // #1
+    await b.create({ title: "Open high", priority: "high", parent: "1", role: "helper" }); // #2
+    const ip = await b.create({ title: "In progress high", priority: "high", parent: "1" }); // #3
     await b.start(ip.item.number);
-    const nd = await b.create({ title: "Needs decision P1", priority: "P1", role: "user" }); // #4
+    const nd = await b.create({ title: "Needs decision high", priority: "high", role: "user" }); // #4
     await b.decide(nd.item.number);
-    await b.create({ title: "Blocked P1", priority: "P1", blockedBy: ["2"], component: "engine" }); // #5
-    await b.create({ title: "P3", priority: "P3" }); // #6
-    await b.create({ title: "P2 engine", priority: "P2", component: "engine" }); // #7
+    await b.create({ title: "Blocked high", priority: "high", blockedBy: ["2"], component: "engine" }); // #5
+    await b.create({ title: "low", priority: "low" }); // #6
+    await b.create({ title: "medium engine", priority: "medium", component: "engine" }); // #7
     expect(epic.item.number).toBe(1);
     return s;
   }
@@ -149,14 +161,14 @@ describe("next, list and snapshot", () => {
       [
         "# plan-me snapshot o/r: 7 open items",
         "## engine",
-        "#5 [engine P1 blocked] Blocked P1 — blocked by #2",
-        "#7 [engine P2 open] P2 engine",
+        "#5 [engine high blocked] Blocked high — blocked by #2",
+        "#7 [engine medium open] medium engine",
         "## game",
-        "#4 [game P1 needs-decision user] Needs decision P1",
-        "#1 [game P1 open epic] Epic",
-        "  #3 [game P1 in-progress] In progress P1",
-        "  #2 [game P1 open helper] Open P1",
-        "#6 [game P3 open] P3",
+        "#4 [game high needs-decision user] Needs decision high",
+        "#1 [game high open epic] Epic",
+        "  #3 [game high in-progress] In progress high",
+        "  #2 [game high open helper] Open high",
+        "#6 [game low open] low",
         "",
       ].join("\n")
     );
@@ -181,5 +193,47 @@ describe("askBody", () => {
     expect(body).toContain("### Who decides");
     expect(askBody(undefined, "Two or three?")).toBe("Two or three?");
     expect(askBody("Decision", undefined)).toContain("### What\n\n<!--");
+  });
+});
+
+describe("issue fields (a repository of an organization)", () => {
+  const orgFeatures = {
+    subIssues: true,
+    dependencies: true,
+    issueTypes: ["Feature", "Bug", "Task"],
+    issueFieldsSupported: true,
+    issueFields: [],
+  };
+
+  test("init creates the issue fields; the boards get Status and Role only", async () => {
+    const { api, backlog } = setup(orgFeatures);
+    const first = await backlog.init(true);
+    expect(first).toEqual(expect.arrayContaining(['create issue field "Priority"', 'create issue field "Effort"']));
+    expect(api.orgFields.size).toBe(0);
+    await backlog.init(false);
+    expect(api.orgFields.get("Priority")).toEqual(["Urgent", "High", "Medium", "Low"]);
+    expect([...(api.boards.get("Engine") ?? [])]).toEqual(["Status", "Role"]);
+    expect(await backlog.init(false)).toEqual([]);
+  });
+
+  test("Priority and Effort are written to and read from the issue fields, the rest to the board", async () => {
+    const { api, backlog } = setup(orgFeatures);
+    await backlog.init(false);
+    const { item } = await backlog.create({ title: "A", priority: "high", effort: "low", role: "lead" });
+    const raw = api.issues.get(item.number);
+    expect(raw?.issueFields).toEqual({ Priority: "High", Effort: "Low" });
+    expect(raw?.boards.Game).toEqual({ Status: "Todo", Role: "lead" });
+    expect(item).toMatchObject({ priority: "high", effort: "low", role: "lead", status: "open" });
+    const updated = await backlog.update(item.number, { priority: "urgent" });
+    expect(updated.actions).toEqual(["priority high -> urgent"]);
+    expect(api.calls.at(-1)).toBe(`issue fields #${item.number} {"Priority":"Urgent"}`);
+    expect((await backlog.update(item.number, { priority: "urgent" })).changed).toBe(false);
+  });
+
+  test("a board-only repository keeps Priority and Effort on the board", async () => {
+    const { api, backlog } = setup();
+    const { item } = await backlog.create({ title: "A", priority: "low", effort: "high" });
+    expect(api.issues.get(item.number)?.boards.Game).toEqual({ Status: "Todo", Priority: "Low", Effort: "High" });
+    expect(item).toMatchObject({ priority: "low", effort: "high" });
   });
 });

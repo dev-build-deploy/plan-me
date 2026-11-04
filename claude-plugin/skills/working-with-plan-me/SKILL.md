@@ -6,7 +6,7 @@ description: Work a backlog kept with plan-me (GitHub issues + Projects v2, deci
 # Working with plan-me
 
 A repository with a `.plan-me.json` keeps its backlog on GitHub issues with Projects v2 boards (one board per
-component; fields Status, Priority, Role, Size) and its decisions as files in `docs/decisions/`. plan-me's commands
+component; fields Status and Role, and the organization's issue fields Priority and Effort) and its decisions as files in `docs/decisions/`. plan-me's commands
 keep the issues, the board fields and the index consistent; `gh issue create`, `gh issue edit` and `gh issue close`
 skip the board fields, so this plugin denies them here. With `-R` / `--repo` naming another repository they pass.
 
@@ -19,7 +19,7 @@ retry reports `#12 unchanged`.
 
 ```sh
 plan-me snapshot --out backlog.txt   # the whole open backlog, one line per item; deterministic
-grep 'web P1' backlog.txt
+grep 'web high' backlog.txt
 ```
 
 Each line is `#12 [component priority status role] title — blocked by #9`, epics with their children indented.
@@ -32,7 +32,7 @@ body). Refresh the snapshot after a batch of changes, not after each.
 plan-me next --component web --role frontend   # one line: open, unblocked, not an epic
 ```
 
-The order is P1 before P2 before P3; within a priority in-progress first, then needs-decision, then open. Take what
+The order is urgent, then high, medium, low; within a priority in-progress first, then needs-decision, then open. Take what
 `next` gives unless the user named the item.
 
 ## Start it
@@ -71,7 +71,7 @@ plan-me refuses an issue that only its author understands. Every issue has a **t
 ```sh
 plan-me check-issue --skeleton --type Task > body.md      # the sections to fill in
 plan-me check-issue body.md --type Task --title "Autosave drafts"   # errors and warnings, before writing
-plan-me new "Autosave drafts" --type Task --body-file body.md --component api --priority P2 --role backend \
+plan-me new "Autosave drafts" --type Task --body-file body.md --component api --priority medium --role backend \
   --parent 3 --blocked-by 9
 ```
 

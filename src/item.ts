@@ -6,7 +6,7 @@
 import { RawIssue } from "./api";
 import { Config, priorityKeys, SelectField, Status } from "./config";
 
-/** A backlog item: an issue read through the configuration (component, board fields, links). */
+/** A backlog item: an issue read through the configuration (component, fields, links). */
 export interface Item {
   number: number;
   /** The stable id from the hidden marker (imports, `new --id`), if any. */
@@ -17,7 +17,7 @@ export interface Item {
   status: Status;
   priority?: string;
   role?: string;
-  size?: string;
+  effort?: string;
   component: string;
   type?: string;
   parent?: number;
@@ -87,9 +87,9 @@ export function toItem(config: Config, raw: RawIssue, known?: Map<number, RawIss
     url: raw.url,
     open: raw.open,
     status: raw.open ? (fieldStatus ?? "open") : "done",
-    priority: reverse(f.priority, values[f.priority.name]),
+    priority: reverse(f.priority, raw.issueFields[f.priority.name] ?? values[f.priority.name]),
     role: reverse(f.role, values[f.role.name]),
-    size: reverse(f.size, values[f.size.name]),
+    effort: reverse(f.effort, raw.issueFields[f.effort.name] ?? values[f.effort.name]),
     component: componentOf(config, raw),
     type: typeOf(config, raw),
     parent: raw.parent,
@@ -121,7 +121,7 @@ export function toItems(config: Config, raws: RawIssue[], includesClosed: boolea
   return items;
 }
 
-/** Sort rank of an item's priority (P1 first, none last). */
+/** Sort rank of an item's priority (the most urgent first, none last). */
 export function priorityRank(config: Config, item: Item): number {
   const keys = priorityKeys(config);
   const i = item.priority ? keys.indexOf(item.priority) : -1;
@@ -142,7 +142,7 @@ export function isEpic(config: Config, item: Item): boolean {
   return item.type?.toLowerCase() === config.epicType.toLowerCase();
 }
 
-/** One line for an item: `#12 [web P1 in-progress frontend] title — blocked by #9`. */
+/** One line for an item: `#12 [web high in-progress frontend] title — blocked by #9`. */
 export function formatItem(config: Config, item: Item): string {
   const tags = [item.component, item.priority, item.status, item.role, isEpic(config, item) ? "epic" : undefined];
   const blocked = item.blockedBy.length > 0 ? ` — blocked by ${item.blockedBy.map(n => `#${n}`).join(", ")}` : "";

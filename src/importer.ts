@@ -175,7 +175,7 @@ export function readItemFolder(config: Config, dir: string, options: ImportOptio
       body,
       type,
       status: status && STATUSES.includes(status) ? status : "open",
-      priority: asString(data.priority),
+      priority: toPriority(config, asString(data.priority)),
       component: mapComponent(config, asList(data.area), options.component),
       role: asString(data.agent) ?? asString(data.owner),
       parent: asString(data.parent),
@@ -275,11 +275,25 @@ function skipLead(text: string): string {
   return skipMeta(text.trim()).trim().replace(SEPARATOR, "").trim();
 }
 
-/** An item's own priority: a leading priority option (`P3 · text`, `P3 (meta): text`), and the text after it. */
-function leadingPriority(text: string, priorities: string[]): { priority?: string; rest: string } {
+/** The priority key a word names (the key or the option name, any case), if any. */
+function priorityKey(config: Config, word: string): string | undefined {
+  const w = word.toLowerCase();
+  return Object.entries(config.fields.priority.options).find(
+    ([k, n]) => k.toLowerCase() === w || n.toLowerCase() === w
+  )?.[0];
+}
+
+/** A priority as written (a key or an option name, any case) as its key; unknown text is kept (and refused later). */
+function toPriority(config: Config, text: string | undefined): string | undefined {
+  return text === undefined ? undefined : (priorityKey(config, text) ?? text);
+}
+
+/** An item's own priority: a leading priority option (`Low · text`, `Low (meta): text`), and the text after it. */
+function leadingPriority(config: Config, text: string): { priority?: string; rest: string } {
   const m = /^([\w-]+)(?=[\s(·:.–—-]|$)/.exec(text);
-  if (!m || !priorities.includes(m[1])) return { rest: text };
-  return { priority: m[1], rest: skipLead(text.slice(m[0].length)) };
+  const priority = m ? priorityKey(config, m[1]) : undefined;
+  if (!m || !priority) return { rest: text };
+  return { priority, rest: skipLead(text.slice(m[0].length)) };
 }
 
 /** A line-list item as read, before its dependencies are known. */
@@ -291,18 +305,18 @@ interface LineItem {
 }
 
 /**
- * The record for a line-list item; `known` are the ids defined in the same file, `priorities` the configured
- * priority options (a leading one overrides the section's priority).
+ * The record for a line-list item; `known` are the ids defined in the same file (a leading priority option overrides
+ * the section's priority).
  */
 function lineRecord(
+  config: Config,
   item: LineItem,
   known: Set<string>,
-  priorities: string[],
   file: string,
   options: ImportOptions
 ): ImportRecord {
   const body = item.text.join(" ").replace(/\s+/g, " ").trim().replace(SEPARATOR, "");
-  const own = leadingPriority(skipLead(body.replace(JOINED_IDS, "").replace(/^done\b/i, "")), priorities);
+  const own = leadingPriority(config, skipLead(body.replace(JOINED_IDS, "").replace(/^done\b/i, "")));
   const text = own.rest;
   const { status, rest } = leadingStatus(text);
   const after = afterClause(rest, known);
@@ -327,7 +341,7 @@ function lineRecord(
 }
 
 /**
- * Adapter (b): a markdown line list. `## P1` headings set the priority (a leading `P3 ·` in an item's text overrides
+ * Adapter (b): a markdown line list. `## High` headings set the priority (a leading `Low ·` in an item's text overrides
  * it, left out of the title); a `## Done` heading marks the items under it
  * done (until the next priority heading); `- **id** · text. Helper: role.` starts an item (indented lines continue
  * it). After the id may come joined ids (`+ **other-id**`, the first id is the item), a balanced `(meta)` group
@@ -338,7 +352,6 @@ function lineRecord(
  */
 export function readLineList(config: Config, file: string, options: ImportOptions = {}): ImportRecord[] {
   const items: LineItem[] = [];
-  const priorities = Object.keys(config.fields.priority.options);
   let priority: string | undefined;
   let doneSection = false;
   let current: LineItem | undefined;
@@ -346,8 +359,9 @@ export function readLineList(config: Config, file: string, options: ImportOption
     const heading = /^##\s+(\S+)/.exec(line);
     if (heading) {
       current = undefined;
-      if (priorities.includes(heading[1])) {
-        priority = heading[1];
+      const key = priorityKey(config, heading[1]);
+      if (key) {
+        priority = key;
         doneSection = false;
       } else if (/^done\b/i.test(heading[1])) {
         doneSection = true;
@@ -367,7 +381,7 @@ export function readLineList(config: Config, file: string, options: ImportOption
     }
   }
   const known = new Set(items.map(i => i.id));
-  return items.map(item => lineRecord(item, known, priorities, file, options));
+  return items.map(item => lineRecord(config, item, known, file, options));
 }
 
 /** The `new` input for a record. */
